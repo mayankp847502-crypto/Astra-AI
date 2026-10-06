@@ -4,26 +4,15 @@ const cors = require("cors");
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 
-app.get("/", (req, res) => {
-  res.json({
-    message: "MyAI Backend is running successfully! 🚀",
-  });
-});
+const OLLAMA_URL = "http://localhost:11434/api/chat";
+const MODEL = "llama3.2";
 
-app.post("/chat", async (req, res) => {
-  try {
-    const { message } = req.body;
+// Only the last N messages are sent to the model (keeps it fast and inside the context window)
+const MAX_HISTORY = 20;
 
-    if (!message || !message.trim()) {
-      return res.status(400).json({
-        error: "Message is required",
-      });
-    }
-
-    // MyAI instructions
-    const prompt = `You are MyAI, a helpful personal AI assistant.
+const SYSTEM_PROMPT = `You are MyAI, a helpful personal AI assistant.
 
 Answer the user clearly and naturally.
 
@@ -41,25 +30,55 @@ console.log(greeting);
 
 Never show programming code as plain text.
 
-For normal explanations, use normal Markdown formatting.
+For normal explanations, use normal Markdown formatting.`;
 
-User message:
-${message}`;
+app.get("/", (req, res) => {
+  res.json({
+    message: "MyAI Backend is running successfully! 🚀",
+  });
+});
 
-    const response = await fetch(
-      "http://localhost:11434/api/generate",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "llama3.2",
-          prompt: prompt,
-          stream: false,
-        }),
-      }
-    );
+app.post("/chat", async (req, res) => {
+  try {
+    const { messages, message } = req.body;
+
+    // Accept the full history (messages) and still support the old { message } format
+    let history = [];
+
+    if (Array.isArray(messages)) {
+      history = messages
+        .filter(
+          (m) =>
+            m &&
+            (m.role === "user" || m.role === "assistant") &&
+            typeof m.content === "string" &&
+            m.content.trim()
+        )
+        .map((m) => ({ role: m.role, content: m.content }));
+    } else if (typeof message === "string" && message.trim()) {
+      history = [{ role: "user", content: message }];
+    }
+
+    if (history.length === 0 || history[history.length - 1].role !== "user") {
+      return res.status(400).json({
+        error: "A user message is required",
+      });
+    }
+
+    const recent = history.slice(-MAX_HISTORY);
+
+    const response = await fetch(OLLAMA_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [{ role: "system", content: SYSTEM_PROMPT }, ...recent],
+        stream: false,
+        options: { num_ctx: 4096 },
+      }),
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -72,7 +91,7 @@ ${message}`;
     const data = await response.json();
 
     res.json({
-      reply: data.response,
+      reply: data.message?.content ?? "",
     });
   } catch (error) {
     console.error("Ollama Error:", error);
@@ -86,7 +105,5 @@ ${message}`;
 const PORT = 5000;
 
 app.listen(PORT, "127.0.0.1", () => {
-  console.log(
-    `MyAI Backend running at http://localhost:${PORT}`
-  );
+  console.log(`MyAI Backend running at http://localhost:${PORT}`);
 });

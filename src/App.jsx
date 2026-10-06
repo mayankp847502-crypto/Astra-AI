@@ -2,38 +2,32 @@ import React, { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import "./App.css";
 
-function formatTime(timestamp) {
-  if (!timestamp) return "";
+// -----------------------------------------
+// HELPERS
+// -----------------------------------------
 
-  const date = new Date(timestamp);
-
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return date.toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
+const buildHistory = (msgs) =>
+  msgs
+    .filter((m) => !m.isError && m.content)
+    .map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
 
 function App() {
+  // -----------------------------------------
+  // CHATS
+  // -----------------------------------------
+
   const [chats, setChats] = useState(() => {
-    try {
-      const savedChats = localStorage.getItem("myai-chats");
+    const saved = localStorage.getItem("astra-chats");
 
-      if (savedChats) {
-        const parsedChats = JSON.parse(savedChats);
-
-        if (
-          Array.isArray(parsedChats) &&
-          parsedChats.length > 0
-        ) {
-          return parsedChats;
-        }
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return [];
       }
-    } catch (error) {
-      console.error("Chat loading error:", error);
     }
 
     return [
@@ -41,48 +35,105 @@ function App() {
         id: Date.now(),
         title: "New Chat",
         messages: [],
+        pinned: false,
       },
     ];
   });
 
   const [activeChatId, setActiveChatId] = useState(() => {
-    const savedActiveChat =
-      localStorage.getItem("myai-active-chat");
-
-    return savedActiveChat
-      ? Number(savedActiveChat)
-      : null;
+    const saved = localStorage.getItem("astra-active-chat");
+    return saved ? Number(saved) : null;
   });
+
+  // -----------------------------------------
+  // THEME
+  // -----------------------------------------
 
   const [darkMode, setDarkMode] = useState(() => {
-    return localStorage.getItem("myai-theme") === "dark";
+    return localStorage.getItem("astra-theme") === "dark";
   });
 
-  const [copiedId, setCopiedId] = useState(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  // -----------------------------------------
+  // SETTINGS
+  // -----------------------------------------
 
-  const [renamingChatId, setRenamingChatId] = useState(null);
-  const [renameText, setRenameText] = useState("");
+  const [enterToSend, setEnterToSend] = useState(() => {
+    const saved = localStorage.getItem("astra-enter-to-send");
+    return saved === null ? true : saved === "true";
+  });
 
+  const [showTimestamps, setShowTimestamps] = useState(() => {
+    const saved = localStorage.getItem("astra-show-timestamps");
+    return saved === null ? true : saved === "true";
+  });
+
+  // -----------------------------------------
+  // UI STATES
+  // -----------------------------------------
+
+  const [searchText, setSearchText] = useState("");
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const [renamingChatId, setRenamingChatId] = useState(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  const [copiedMessageId, setCopiedMessageId] = useState(null);
+  const [copiedCodeId, setCopiedCodeId] = useState(null);
+
+  const [backendStatus, setBackendStatus] = useState("checking");
+
+  // -----------------------------------------
+  // REFS
+  // -----------------------------------------
 
   const messagesEndRef = useRef(null);
-  const abortControllerRef = useRef(null);
-  const renameInputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const abortControllerRef = useRef(null);
+
+  // -----------------------------------------
+  // ACTIVE CHAT
+  // -----------------------------------------
+
+  useEffect(() => {
+    if (chats.length === 0) {
+      const newChat = {
+        id: Date.now(),
+        title: "New Chat",
+        messages: [],
+        pinned: false,
+      };
+
+      setChats([newChat]);
+      setActiveChatId(newChat.id);
+      return;
+    }
+
+    const exists = chats.some(
+      (chat) => chat.id === activeChatId
+    );
+
+    if (!exists) {
+      setActiveChatId(chats[0].id);
+    }
+  }, [chats, activeChatId]);
+
+  // -----------------------------------------
+  // LOCAL STORAGE
+  // -----------------------------------------
 
   useEffect(() => {
     localStorage.setItem(
-      "myai-chats",
+      "astra-chats",
       JSON.stringify(chats)
     );
   }, [chats]);
 
   useEffect(() => {
-    if (activeChatId) {
+    if (activeChatId !== null) {
       localStorage.setItem(
-        "myai-active-chat",
+        "astra-active-chat",
         String(activeChatId)
       );
     }
@@ -90,10 +141,28 @@ function App() {
 
   useEffect(() => {
     localStorage.setItem(
-      "myai-theme",
+      "astra-theme",
       darkMode ? "dark" : "light"
     );
   }, [darkMode]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      "astra-enter-to-send",
+      String(enterToSend)
+    );
+  }, [enterToSend]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      "astra-show-timestamps",
+      String(showTimestamps)
+    );
+  }, [showTimestamps]);
+
+  // -----------------------------------------
+  // AUTO SCROLL
+  // -----------------------------------------
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
@@ -101,170 +170,598 @@ function App() {
     });
   }, [chats, activeChatId, loading]);
 
+  // -----------------------------------------
+  // BACKEND STATUS
+  // -----------------------------------------
+
   useEffect(() => {
-    if (renamingChatId && renameInputRef.current) {
-      renameInputRef.current.focus();
-      renameInputRef.current.select();
-    }
-  }, [renamingChatId]);
+    let mounted = true;
+
+    const checkBackend = async () => {
+      try {
+        const response = await fetch(
+          "http://localhost:5000",
+          {
+            method: "GET",
+          }
+        );
+
+        if (mounted && response.ok) {
+          setBackendStatus("online");
+        } else if (mounted) {
+          setBackendStatus("offline");
+        }
+      } catch {
+        if (mounted) {
+          setBackendStatus("offline");
+        }
+      }
+    };
+
+    checkBackend();
+
+    const interval = setInterval(
+      checkBackend,
+      15000
+    );
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  // -----------------------------------------
+  // CURRENT CHAT
+  // -----------------------------------------
 
   const activeChat =
     chats.find(
       (chat) => chat.id === activeChatId
-    ) || chats[0];
+    ) || null;
 
-  useEffect(() => {
-    if (!activeChatId && chats.length > 0) {
-      setActiveChatId(chats[0].id);
-    }
-  }, [activeChatId, chats]);
+  const messages = activeChat?.messages || [];
 
-  // =========================
+  // -----------------------------------------
   // SEARCH
-  // =========================
+  // -----------------------------------------
 
-  const filteredChats = chats
+  const filteredChats = [...chats]
     .filter((chat) => {
-      const query = String(searchQuery || "")
-        .toLowerCase()
-        .trim();
-
-      if (!query) {
+      if (!searchText.trim()) {
         return true;
       }
 
-      const title = String(chat?.title || "");
+      const search = searchText.toLowerCase();
 
-      const titleMatch = title
-        .toLowerCase()
-        .includes(query);
-
-      const messages = Array.isArray(chat?.messages)
-        ? chat.messages
-        : [];
-
-      const messageMatch = messages.some((message) => {
-        const messageText = String(
-          message?.text || ""
-        );
-
-        return messageText
-          .toLowerCase()
-          .includes(query);
-      });
-
-      return titleMatch || messageMatch;
+      return (
+        chat.title
+          ?.toLowerCase()
+          .includes(search) ||
+        chat.messages?.some((message) =>
+          message.content
+            ?.toLowerCase()
+            .includes(search)
+        )
+      );
     })
     .sort((a, b) => {
-      if (Boolean(a.pinned) !== Boolean(b.pinned)) {
-        return a.pinned ? -1 : 1;
-      }
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
 
-      return Number(b.id) - Number(a.id);
+      return b.id - a.id;
     });
 
-  // =========================
-  // UPDATE MESSAGES
-  // =========================
+  // -----------------------------------------
+  // NEW CHAT
+  // -----------------------------------------
 
-  const updateChatMessages = (
-    chatId,
-    messages
-  ) => {
-    setChats((prevChats) =>
-      prevChats.map((chat) =>
-        chat.id === chatId
+  const newChat = () => {
+    const chat = {
+      id: Date.now(),
+      title: "New Chat",
+      messages: [],
+      pinned: false,
+    };
+
+    setChats((prev) => [chat, ...prev]);
+    setActiveChatId(chat.id);
+    setInput("");
+  };
+
+  // -----------------------------------------
+  // SELECT CHAT
+  // -----------------------------------------
+
+  const selectChat = (id) => {
+    setActiveChatId(id);
+    setInput("");
+  };
+
+  // -----------------------------------------
+  // DELETE CHAT
+  // -----------------------------------------
+
+  const deleteChat = (id) => {
+    const remaining = chats.filter(
+      (chat) => chat.id !== id
+    );
+
+    if (remaining.length === 0) {
+      const newChatItem = {
+        id: Date.now(),
+        title: "New Chat",
+        messages: [],
+        pinned: false,
+      };
+
+      setChats([newChatItem]);
+      setActiveChatId(newChatItem.id);
+      return;
+    }
+
+    setChats(remaining);
+
+    if (id === activeChatId) {
+      setActiveChatId(remaining[0].id);
+    }
+  };
+
+  // -----------------------------------------
+  // PIN
+  // -----------------------------------------
+
+  const togglePinChat = (id) => {
+    setChats((prev) =>
+      prev.map((chat) =>
+        chat.id === id
           ? {
               ...chat,
-              messages,
+              pinned: !chat.pinned,
             }
           : chat
       )
     );
   };
 
-  // =========================
-  // EXPORT CHAT
-  // =========================
+  // -----------------------------------------
+  // CLEAR ALL
+  // -----------------------------------------
+
+  const clearAllChats = () => {
+    const confirmed = window.confirm(
+      "Are you sure you want to delete all chats?"
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const newChatItem = {
+      id: Date.now(),
+      title: "New Chat",
+      messages: [],
+      pinned: false,
+    };
+
+    setChats([newChatItem]);
+    setActiveChatId(newChatItem.id);
+    setInput("");
+  };
+
+  // -----------------------------------------
+  // RENAME
+  // -----------------------------------------
+
+  const startRename = (chat) => {
+    setRenamingChatId(chat.id);
+    setRenameValue(chat.title);
+  };
+
+  const saveRename = (id) => {
+    const newTitle = renameValue.trim();
+
+    if (!newTitle) {
+      setRenamingChatId(null);
+      return;
+    }
+
+    setChats((prev) =>
+      prev.map((chat) =>
+        chat.id === id
+          ? {
+              ...chat,
+              title: newTitle,
+            }
+          : chat
+      )
+    );
+
+    setRenamingChatId(null);
+    setRenameValue("");
+  };
+
+  // -----------------------------------------
+  // SEND MESSAGE
+  // -----------------------------------------
+
+  const sendMessage = async () => {
+    const message = input.trim();
+
+    if (
+      !message ||
+      loading ||
+      !activeChatId
+    ) {
+      return;
+    }
+
+    const userMessage = {
+      id: Date.now(),
+      role: "user",
+      content: message,
+      timestamp: new Date().toISOString(),
+    };
+
+    const historyForBackend = buildHistory([
+      ...(activeChat?.messages || []),
+      userMessage,
+    ]);
+
+    setChats((prev) =>
+      prev.map((chat) =>
+        chat.id === activeChatId
+          ? {
+              ...chat,
+              title:
+                chat.messages.length === 0
+                  ? message.slice(0, 35)
+                  : chat.title,
+              messages: [
+                ...chat.messages,
+                userMessage,
+              ],
+            }
+          : chat
+      )
+    );
+
+    setInput("");
+    setLoading(true);
+
+    const controller = new AbortController();
+
+    abortControllerRef.current = controller;
+
+    try {
+      const response = await fetch(
+        "http://localhost:5000/chat",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+
+          body: JSON.stringify({
+            message,
+            messages: historyForBackend,
+          }),
+
+          signal: controller.signal,
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            "Something went wrong"
+        );
+      }
+
+      const aiMessage = {
+        id: Date.now() + 1,
+        role: "assistant",
+        content: data.reply,
+        timestamp: new Date().toISOString(),
+      };
+
+      setChats((prev) =>
+        prev.map((chat) =>
+          chat.id === activeChatId
+            ? {
+                ...chat,
+                messages: [
+                  ...chat.messages,
+                  aiMessage,
+                ],
+              }
+            : chat
+        )
+      );
+    } catch (error) {
+      if (error.name === "AbortError") {
+        return;
+      }
+
+      const errorMessage = {
+        id: Date.now() + 1,
+        role: "assistant",
+        isError: true,
+        content:
+          "Sorry, I could not connect to the AI server. Please make sure the Astra AI backend and Ollama are running.",
+        timestamp: new Date().toISOString(),
+      };
+
+      setChats((prev) =>
+        prev.map((chat) =>
+          chat.id === activeChatId
+            ? {
+                ...chat,
+                messages: [
+                  ...chat.messages,
+                  errorMessage,
+                ],
+              }
+            : chat
+        )
+      );
+    } finally {
+      setLoading(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  // -----------------------------------------
+  // ENTER TO SEND
+  // -----------------------------------------
+
+  const handleInputKeyDown = (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    if (event.shiftKey) {
+      return;
+    }
+
+    if (!enterToSend) {
+      return;
+    }
+
+    event.preventDefault();
+    sendMessage();
+  };
+
+  // -----------------------------------------
+  // STOP
+  // -----------------------------------------
+
+  const stopGenerating = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    setLoading(false);
+  };
+
+  // -----------------------------------------
+  // REGENERATE
+  // -----------------------------------------
+
+  const regenerateResponse = async (
+    messageIndex
+  ) => {
+    if (loading || !activeChat) {
+      return;
+    }
+
+    const previousUserMessage =
+      activeChat.messages[
+        messageIndex - 1
+      ];
+
+    if (
+      !previousUserMessage ||
+      previousUserMessage.role !== "user"
+    ) {
+      return;
+    }
+
+    const history =
+      activeChat.messages.slice(
+        0,
+        messageIndex
+      );
+
+    setChats((prev) =>
+      prev.map((chat) =>
+        chat.id === activeChatId
+          ? {
+              ...chat,
+              messages:
+                chat.messages.slice(
+                  0,
+                  messageIndex
+                ),
+            }
+          : chat
+      )
+    );
+
+    setLoading(true);
+
+    const controller = new AbortController();
+
+    abortControllerRef.current = controller;
+
+    try {
+      const response = await fetch(
+        "http://localhost:5000/chat",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message:
+              previousUserMessage.content,
+            messages:
+              buildHistory(history),
+          }),
+          signal: controller.signal,
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            "Regeneration failed"
+        );
+      }
+
+      const aiMessage = {
+        id: Date.now(),
+        role: "assistant",
+        content: data.reply,
+        timestamp: new Date().toISOString(),
+      };
+
+      setChats((prev) =>
+        prev.map((chat) =>
+          chat.id === activeChatId
+            ? {
+                ...chat,
+                messages: [
+                  ...chat.messages,
+                  aiMessage,
+                ],
+              }
+            : chat
+        )
+      );
+    } catch (error) {
+      if (error.name === "AbortError") {
+        return;
+      }
+
+      const errorMessage = {
+        id: Date.now(),
+        role: "assistant",
+        isError: true,
+        content: "Regeneration failed.",
+        timestamp: new Date().toISOString(),
+      };
+
+      setChats((prev) =>
+        prev.map((chat) =>
+          chat.id === activeChatId
+            ? {
+                ...chat,
+                messages: [
+                  ...chat.messages,
+                  errorMessage,
+                ],
+              }
+            : chat
+        )
+      );
+    } finally {
+      setLoading(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  // -----------------------------------------
+  // COPY MESSAGE
+  // -----------------------------------------
+
+  const copyMessage = async (
+    content,
+    id
+  ) => {
+    try {
+      await navigator.clipboard.writeText(
+        content
+      );
+
+      setCopiedMessageId(id);
+
+      setTimeout(() => {
+        setCopiedMessageId(null);
+      }, 1500);
+    } catch {
+      alert("Copy failed");
+    }
+  };
+
+  // -----------------------------------------
+  // COPY CODE
+  // -----------------------------------------
+
+  const copyCode = async (
+    code,
+    id
+  ) => {
+    try {
+      await navigator.clipboard.writeText(
+        code
+      );
+
+      setCopiedCodeId(id);
+
+      setTimeout(() => {
+        setCopiedCodeId(null);
+      }, 1500);
+    } catch {
+      alert("Code copy failed");
+    }
+  };
+
+  // -----------------------------------------
+  // EXPORT
+  // -----------------------------------------
 
   const exportChat = () => {
     if (!activeChat) {
       return;
     }
 
-    const messages = Array.isArray(
-      activeChat.messages
-    )
-      ? activeChat.messages
-      : [];
+    let text = `Astra AI Chat\n`;
+    text += `Title: ${activeChat.title}\n`;
+    text += `================================\n\n`;
 
-    if (messages.length === 0) {
-      alert(
-        "There is no conversation to export."
-      );
-      return;
-    }
+    activeChat.messages.forEach(
+      (message) => {
+        text += `${
+          message.role === "user"
+            ? "You"
+            : "Astra AI"
+        }:\n`;
 
-    let content = "";
-
-    content += "====================================\n";
-    content += "              MyAI CHAT\n";
-    content += "====================================\n\n";
-
-    content += `Chat Title: ${
-      activeChat.title || "Untitled Chat"
-    }\n`;
-
-    content += `Exported: ${new Date().toLocaleString()}\n\n`;
-
-    content += "====================================\n\n";
-
-    messages.forEach((message) => {
-      const sender =
-        message.role === "user"
-          ? "You"
-          : "MyAI";
-
-      const time = formatTime(
-        message.timestamp
-      );
-
-      content += `${sender}`;
-
-      if (time) {
-        content += ` (${time})`;
+        text += `${message.content}\n\n`;
+        text += `--------------------------------\n\n`;
       }
+    );
 
-      content += ":\n";
-
-      content += `${message.text || ""}\n\n`;
-
-      content +=
-        "------------------------------------\n\n";
+    const blob = new Blob([text], {
+      type: "text/plain",
     });
 
-    content += "====================================\n";
-    content += "          Generated by MyAI\n";
-    content += "====================================\n";
+    const url =
+      URL.createObjectURL(blob);
 
-    const blob = new Blob([content], {
-      type: "text/plain;charset=utf-8",
-    });
-
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement("a");
+    const link =
+      document.createElement("a");
 
     link.href = url;
 
-    const safeTitle = String(
-      activeChat.title || "myai-chat"
-    )
-      .replace(/[<>:"/\\|?*]/g, "")
-      .trim();
-
     link.download = `${
-      safeTitle || "myai-chat"
+      activeChat.title ||
+      "astra-ai-chat"
     }.txt`;
 
     document.body.appendChild(link);
@@ -276,1258 +773,560 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
-  // =========================
-  // IMPORT CHAT
-  // =========================
+  // -----------------------------------------
+  // IMPORT
+  // -----------------------------------------
 
-  const importChat = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleImportChat = (event) => {
-    const file = event.target.files?.[0];
+  const importChat = (event) => {
+    const file =
+      event.target.files?.[0];
 
     if (!file) {
       return;
     }
 
-    if (
-      !file.name
-        .toLowerCase()
-        .endsWith(".txt")
-    ) {
-      alert(
-        "Please select a MyAI .txt chat file."
-      );
-
-      event.target.value = "";
-
-      return;
-    }
-
     const reader = new FileReader();
 
-    reader.onload = (loadEvent) => {
-      try {
-        const content = String(
-          loadEvent.target?.result || ""
-        );
-
-        if (!content.trim()) {
-          alert(
-            "The selected file is empty."
-          );
-
-          return;
-        }
-
-        const titleMatch = content.match(
-          /Chat Title:\s*(.+)/
-        );
-
-        const importedTitle =
-          titleMatch?.[1]?.trim() ||
-          file.name.replace(
-            /\.txt$/i,
-            ""
-          ) ||
-          "Imported Chat";
-
-        const blocks = content.split(
-          "------------------------------------"
-        );
-
-        const importedMessages = [];
-
-        blocks.forEach((block) => {
-          const cleanedBlock =
-            block.trim();
-
-          if (!cleanedBlock) {
-            return;
-          }
-
-          const messageMatch =
-            cleanedBlock.match(
-              /^(You|MyAI)(?:\s*\(([^)]+)\))?:\s*\n([\s\S]*)$/i
-            );
-
-          if (!messageMatch) {
-            return;
-          }
-
-          const sender =
-            messageMatch[1];
-
-          const time =
-            messageMatch[2];
-
-          const text =
-            messageMatch[3].trim();
-
-          if (!text) {
-            return;
-          }
-
-          const role =
-            sender.toLowerCase() === "you"
-              ? "user"
-              : "assistant";
-
-          let timestamp =
-            new Date().toISOString();
-
-          if (time) {
-            const now = new Date();
-
-            const parsedTime =
-              new Date(
-                `${now.toDateString()} ${time}`
-              );
-
-            if (
-              !Number.isNaN(
-                parsedTime.getTime()
-              )
-            ) {
-              timestamp =
-                parsedTime.toISOString();
-            }
-          }
-
-          importedMessages.push({
-            id:
-              Date.now() +
-              Math.random(),
-
-            role,
-
-            text,
-
-            timestamp,
-          });
-        });
-
-        if (
-          importedMessages.length === 0
-        ) {
-          alert(
-            "No valid MyAI messages were found in this file."
-          );
-
-          return;
-        }
-
-        const importedChat = {
-          id: Date.now(),
-
-          title: importedTitle,
-
-          messages: importedMessages,
-        };
-
-        setChats((prevChats) => [
-          ...prevChats,
-          importedChat,
-        ]);
-
-        setActiveChatId(
-          importedChat.id
-        );
-
-        setSearchQuery("");
-
-        alert(
-          "Chat imported successfully! ✅"
-        );
-      } catch (error) {
-        console.error(
-          "Import error:",
-          error
-        );
-
-        alert(
-          "Unable to import this chat file."
-        );
-      } finally {
-        event.target.value = "";
-      }
-    };
-
-    reader.onerror = () => {
-      alert(
-        "Could not read the selected file."
+    reader.onload = () => {
+      const content = String(
+        reader.result || ""
       );
 
-      event.target.value = "";
+      const importedChat = {
+        id: Date.now(),
+        title:
+          file.name.replace(
+            ".txt",
+            ""
+          ) ||
+          "Imported Chat",
+        messages: [
+          {
+            id: Date.now() + 1,
+            role: "assistant",
+            content,
+            timestamp:
+              new Date().toISOString(),
+          },
+        ],
+        pinned: false,
+      };
+
+      setChats((prev) => [
+        importedChat,
+        ...prev,
+      ]);
+
+      setActiveChatId(
+        importedChat.id
+      );
     };
 
     reader.readAsText(file);
+
+    event.target.value = "";
   };
 
-  // =========================
-  // SEND MESSAGE
-  // =========================
-
-  const sendMessage = async () => {
-    const messageText = input.trim();
-
-    if (!messageText || loading) {
-      return;
-    }
-
-    let chatId = activeChatId;
-
-    if (!chatId) {
-      const newChat = {
-        id: Date.now(),
-        title: "New Chat",
-        messages: [],
-      };
-
-      setChats((prevChats) => [
-        ...prevChats,
-        newChat,
-      ]);
-
-      chatId = newChat.id;
-
-      setActiveChatId(chatId);
-    }
-
-    const userMessage = {
-      id: Date.now(),
-      role: "user",
-      text: messageText,
-      timestamp: new Date().toISOString(),
-    };
-
-    const currentChat =
-      chats.find(
-        (chat) => chat.id === chatId
-      ) || activeChat;
-
-    const currentMessages =
-      currentChat?.messages || [];
-
-    const updatedMessages = [
-      ...currentMessages,
-      userMessage,
-    ];
-
-    updateChatMessages(
-      chatId,
-      updatedMessages
-    );
-
-    setInput("");
-    setLoading(true);
-
-    if (
-      currentMessages.length === 0 ||
-      currentChat?.title === "New Chat"
-    ) {
-      setChats((prevChats) =>
-        prevChats.map((chat) =>
-          chat.id === chatId
-            ? {
-                ...chat,
-                title:
-                  messageText.length > 30
-                    ? `${messageText.slice(
-                        0,
-                        30
-                      )}...`
-                    : messageText,
-              }
-            : chat
-        )
-      );
-    }
-
-    const controller =
-      new AbortController();
-
-    abortControllerRef.current =
-      controller;
-
-    try {
-      const response = await fetch(
-        "http://localhost:5000/chat",
-        {
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-
-          body: JSON.stringify({
-            message: messageText,
-          }),
-
-          signal: controller.signal,
-        }
-      );
-
-      const data =
-        await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.error ||
-            "AI response failed"
-        );
-      }
-
-      const assistantMessage = {
-        id: Date.now() + 1,
-
-        role: "assistant",
-
-        text:
-          data.reply ||
-          "Sorry, I could not generate a response.",
-
-        timestamp:
-          new Date().toISOString(),
-      };
-
-      updateChatMessages(chatId, [
-        ...updatedMessages,
-        assistantMessage,
-      ]);
-    } catch (error) {
-      if (
-        error.name ===
-        "AbortError"
-      ) {
-        return;
-      }
-
-      console.error(
-        "Chat error:",
-        error
-      );
-
-      const errorMessage = {
-        id: Date.now() + 2,
-
-        role: "assistant",
-
-        text:
-          "Sorry, something went wrong while connecting to MyAI.",
-
-        timestamp:
-          new Date().toISOString(),
-      };
-
-      updateChatMessages(chatId, [
-        ...updatedMessages,
-        errorMessage,
-      ]);
-    } finally {
-      setLoading(false);
-
-      abortControllerRef.current =
-        null;
-    }
-  };
-
-  // =========================
-  // STOP GENERATING
-  // =========================
-
-  const stopGenerating = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-
-      abortControllerRef.current =
-        null;
-    }
-
-    setLoading(false);
-  };
-
-  // =========================
-  // REGENERATE
-  // =========================
-
-  const regenerateResponse =
-    async () => {
-      if (!activeChat || loading) {
-        return;
-      }
-
-      const messages =
-        activeChat.messages || [];
-
-      if (messages.length === 0) {
-        return;
-      }
-
-      const lastUserMessage =
-        [...messages]
-          .reverse()
-          .find(
-            (message) =>
-              message.role === "user"
-          );
-
-      if (!lastUserMessage) {
-        return;
-      }
-
-      const lastAssistantIndex =
-        [...messages]
-          .map(
-            (
-              message,
-              index
-            ) => ({
-              message,
-              index,
-            })
-          )
-          .reverse()
-          .find(
-            ({ message }) =>
-              message.role ===
-              "assistant"
-          )?.index;
-
-      let messagesWithoutLastAssistant =
-        messages;
-
-      if (
-        lastAssistantIndex !==
-          undefined &&
-        lastAssistantIndex >
-          messages.findIndex(
-            (message) =>
-              message.id ===
-              lastUserMessage.id
-          )
-      ) {
-        messagesWithoutLastAssistant =
-          messages.filter(
-            (_, index) =>
-              index !==
-              lastAssistantIndex
-          );
-      }
-
-      updateChatMessages(
-        activeChat.id,
-        messagesWithoutLastAssistant
-      );
-
-      setLoading(true);
-
-      const controller =
-        new AbortController();
-
-      abortControllerRef.current =
-        controller;
-
-      try {
-        const response = await fetch(
-          "http://localhost:5000/chat",
-          {
-            method: "POST",
-
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-
-            body: JSON.stringify({
-              message:
-                lastUserMessage.text,
-            }),
-
-            signal:
-              controller.signal,
-          }
-        );
-
-        const data =
-          await response.json();
-
-        if (!response.ok) {
-          throw new Error(
-            data.error ||
-              "AI response failed"
-          );
-        }
-
-        const assistantMessage = {
-          id: Date.now(),
-
-          role: "assistant",
-
-          text:
-            data.reply ||
-            "Sorry, I could not generate a response.",
-
-          timestamp:
-            new Date().toISOString(),
-        };
-
-        updateChatMessages(
-          activeChat.id,
-          [
-            ...messagesWithoutLastAssistant,
-            assistantMessage,
-          ]
-        );
-      } catch (error) {
-        if (
-          error.name ===
-          "AbortError"
-        ) {
-          return;
-        }
-
-        console.error(
-          "Regenerate error:",
-          error
-        );
-      } finally {
-        setLoading(false);
-
-        abortControllerRef.current =
-          null;
-      }
-    };
-
-  // =========================
-  // NEW CHAT
-  // =========================
-
-  const newChat = () => {
-    stopGenerating();
-
-    const chat = {
-      id: Date.now(),
-
-      title: "New Chat",
-
-      messages: [],
-    };
-
-    setChats((prevChats) => [
-      ...prevChats,
-      chat,
-    ]);
-
-    setActiveChatId(chat.id);
-
-    setSearchQuery("");
-  };
-
-  // =========================
-  // SELECT CHAT
-  // =========================
-
-  const selectChat = (chatId) => {
-    stopGenerating();
-
-    setActiveChatId(chatId);
-  };
-
-  // =========================
-  // DELETE CHAT
-  // =========================
-
-  const deleteChat = (chatId) => {
-    stopGenerating();
-
-    const remainingChats =
-      chats.filter(
-        (chat) =>
-          chat.id !== chatId
-      );
-
-    if (
-      remainingChats.length === 0
-    ) {
-      const freshChat = {
-        id: Date.now(),
-
-        title: "New Chat",
-
-        messages: [],
-      };
-
-      setChats([freshChat]);
-
-      setActiveChatId(
-        freshChat.id
-      );
-
-      return;
-    }
-
-    setChats(remainingChats);
-
-    if (
-      activeChatId === chatId
-    ) {
-      setActiveChatId(
-        remainingChats[0].id
-      );
-    }
-  };
-
-  // =========================
-  // PIN / UNPIN CHAT
-  // =========================
-
-  const togglePin = (chatId, event) => {
-    event.stopPropagation();
-
-    setChats((prevChats) =>
-      prevChats.map((chat) =>
-        chat.id === chatId
-          ? {
-              ...chat,
-              pinned: !chat.pinned,
-            }
-          : chat
-      )
-    );
-  };
-
-  // =========================
-  // CLEAR ALL CHATS
-  // =========================
-
-  const clearAllChats = () => {
-    stopGenerating();
-
-    const confirmed = window.confirm(
-      "Are you sure you want to delete all chats? This action cannot be undone."
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    const freshChat = {
-      id: Date.now(),
-      title: "New Chat",
-      messages: [],
-      pinned: false,
-    };
-
-    setChats([freshChat]);
-    setActiveChatId(freshChat.id);
-    setSearchQuery("");
-    setRenamingChatId(null);
-    setRenameText("");
-  };
-
-  // =========================
-  // RENAME CHAT
-  // =========================
-
-  const startRename = (
-    chat,
-    event
-  ) => {
-    event.stopPropagation();
-
-    setRenamingChatId(chat.id);
-
-    setRenameText(
-      String(chat.title || "")
-    );
-  };
-
-  const saveRename = () => {
-    const newTitle =
-      renameText.trim();
-
-    if (!renamingChatId) {
-      return;
-    }
-
-    if (!newTitle) {
-      cancelRename();
-
-      return;
-    }
-
-    setChats((prevChats) =>
-      prevChats.map((chat) =>
-        chat.id === renamingChatId
-          ? {
-              ...chat,
-              title: newTitle,
-            }
-          : chat
-      )
-    );
-
-    setRenamingChatId(null);
-
-    setRenameText("");
-  };
-
-  const cancelRename = () => {
-    setRenamingChatId(null);
-
-    setRenameText("");
-  };
-
-  const handleRenameKeyDown = (
-    event
-  ) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-
-      saveRename();
-    }
-
-    if (event.key === "Escape") {
-      event.preventDefault();
-
-      cancelRename();
-    }
-  };
-
-  // =========================
-  // COPY MESSAGE
-  // =========================
-
-  const copyMessage = async (
-    text,
-    id
-  ) => {
-    try {
-      await navigator.clipboard.writeText(
-        text
-      );
-
-      setCopiedId(id);
-
-      setTimeout(() => {
-        setCopiedId(null);
-      }, 1500);
-    } catch (error) {
-      console.error(
-        "Copy failed:",
-        error
-      );
-    }
-  };
-
-  // =========================
-  // COPY CODE
-  // =========================
-
-  const copyCode = async (
-    code,
-    id
-  ) => {
-    try {
-      await navigator.clipboard.writeText(
-        code
-      );
-
-      setCopiedId(
-        `code-${id}`
-      );
-
-      setTimeout(() => {
-        setCopiedId(null);
-      }, 1500);
-    } catch (error) {
-      console.error(
-        "Code copy failed:",
-        error
-      );
-    }
-  };
-
-  // =========================
+  // -----------------------------------------
   // THEME
-  // =========================
+  // -----------------------------------------
 
   const toggleTheme = () => {
-    setDarkMode(
-      (prev) => !prev
+    setDarkMode((prev) => !prev);
+  };
+
+  // -----------------------------------------
+  // TIME
+  // -----------------------------------------
+
+  const formatTime = (timestamp) => {
+    if (!timestamp) {
+      return "";
+    }
+
+    return new Date(
+      timestamp
+    ).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  // -----------------------------------------
+  // MARKDOWN CODE
+  // -----------------------------------------
+
+  const MarkdownCode = ({
+    inline,
+    children,
+  }) => {
+    const code = String(children).replace(
+      /\n$/,
+      ""
+    );
+
+    const codeId =
+      `${Date.now()}-${Math.random()}`;
+
+    if (inline) {
+      return <code>{children}</code>;
+    }
+
+    return (
+      <div className="code-block-wrapper">
+        <div className="code-block-header">
+          <span>Code</span>
+
+          <button
+            type="button"
+            className="code-copy-button"
+            onClick={() =>
+              copyCode(
+                code,
+                codeId
+              )
+            }
+          >
+            {copiedCodeId === codeId
+              ? "✓ Copied"
+              : "Copy"}
+          </button>
+        </div>
+
+        <pre>
+          <code>{code}</code>
+        </pre>
+      </div>
     );
   };
 
-  // =========================
-  // INPUT
-  // =========================
+  // -----------------------------------------
+  // STATISTICS
+  // -----------------------------------------
 
-  const handleInputKeyDown = (
-    event
-  ) => {
-    if (
-      event.key === "Enter" &&
-      !event.shiftKey
-    ) {
-      event.preventDefault();
+  const totalMessages = chats.reduce(
+    (total, chat) =>
+      total +
+      (chat.messages?.length || 0),
+    0
+  );
 
-      sendMessage();
-    }
+  const userMessages = chats.reduce(
+    (total, chat) =>
+      total +
+      (chat.messages || []).filter(
+        (message) =>
+          message.role === "user"
+      ).length,
+    0
+  );
+
+  const aiMessages = chats.reduce(
+    (total, chat) =>
+      total +
+      (chat.messages || []).filter(
+        (message) =>
+          message.role === "assistant" &&
+          !message.isError
+      ).length,
+    0
+  );
+
+  // -----------------------------------------
+  // QUICK ACTION
+  // -----------------------------------------
+
+  const useQuickPrompt = (prompt) => {
+    setInput(prompt);
   };
+
+  // -----------------------------------------
+  // UI
+  // -----------------------------------------
 
   return (
     <div
       className={`app ${
-        darkMode
-          ? "dark-mode"
-          : ""
+        darkMode ? "dark-mode" : ""
       }`}
     >
-      {/* =========================
+      {/* =====================================
           SIDEBAR
-      ========================= */}
+      ====================================== */}
 
       <aside className="sidebar">
-        <div className="sidebar-header">
-          <div className="logo">
-            🤖
-          </div>
+        <div className="sidebar-top">
 
-          <div>
-            <h2>MyAI</h2>
-
-            <span>
-              Personal AI
-            </span>
-          </div>
-        </div>
-
-        <button
-          className="new-chat-button"
-          onClick={newChat}
-        >
-          ＋ New Chat
-        </button>
-
-        <div className="chat-search">
-          <input
-            type="text"
-            placeholder="Search chats..."
-            value={searchQuery}
-            onChange={(event) =>
-              setSearchQuery(
-                event.target.value
-              )
-            }
-          />
-
-          {searchQuery && (
-            <button
-              className="clear-search"
-              onClick={() =>
-                setSearchQuery("")
-              }
-              type="button"
-            >
-              ✕
-            </button>
-          )}
-        </div>
-
-        <div className="recent-title">
-          Recent Chats
-        </div>
-
-        <div className="chat-list">
-          {filteredChats.length ===
-          0 ? (
-            <div className="no-search-results">
-              No chats found
+          <div className="logo-area">
+            <div className="logo-icon">
+              ✦
             </div>
-          ) : (
-            filteredChats.map(
-              (chat) => (
-                <div
-                  key={chat.id}
-                  className={`chat-item ${
-                    activeChatId ===
-                    chat.id
-                      ? "active"
-                      : ""
-                  }`}
-                  onClick={() =>
-                    selectChat(
-                      chat.id
-                    )
-                  }
-                >
+
+            <div>
+              <h1>Astra AI</h1>
+
+              <span>
+                Personal AI Assistant
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="new-chat-button"
+            onClick={newChat}
+          >
+            <span>＋</span>
+            New Chat
+          </button>
+
+          <div className="search-box">
+            <span>🔍</span>
+
+            <input
+              type="text"
+              placeholder="Search chats..."
+              value={searchText}
+              onChange={(event) =>
+                setSearchText(
+                  event.target.value
+                )
+              }
+            />
+          </div>
+        </div>
+
+        <div className="chat-history">
+          {filteredChats.map(
+            (chat) => (
+              <div
+                key={chat.id}
+                className={`chat-history-item ${
+                  chat.id ===
+                  activeChatId
+                    ? "active"
+                    : ""
+                }`}
+                onClick={() =>
+                  selectChat(chat.id)
+                }
+              >
+                <div className="chat-history-main">
+                  <span className="chat-icon">
+                    {chat.pinned
+                      ? "📌"
+                      : "💬"}
+                  </span>
+
                   {renamingChatId ===
                   chat.id ? (
-                    <div className="rename-container">
-                      <input
-                        ref={
-                          renameInputRef
-                        }
-                        className="rename-input"
-                        type="text"
-                        value={
-                          renameText
-                        }
-                        onChange={(
-                          event
-                        ) =>
-                          setRenameText(
-                            event
-                              .target
-                              .value
-                          )
-                        }
-                        onKeyDown={
-                          handleRenameKeyDown
-                        }
-                        onClick={(
-                          event
-                        ) =>
-                          event.stopPropagation()
-                        }
-                      />
-
-                      <button
-                        type="button"
-                        className="rename-save"
-                        onClick={(
-                          event
-                        ) => {
-                          event.stopPropagation();
-
-                          saveRename();
-                        }}
-                        title="Save"
-                      >
-                        ✓
-                      </button>
-
-                      <button
-                        type="button"
-                        className="rename-cancel"
-                        onClick={(
-                          event
-                        ) => {
-                          event.stopPropagation();
-
-                          cancelRename();
-                        }}
-                        title="Cancel"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <span className="chat-title">
-                        {chat.pinned ? "📌" : "💬"}{" "}
-                        {String(
-                          chat.title ||
-                            "Untitled Chat"
-                        )}
-                      </span>
-
-                      <button
-                        type="button"
-                        className="pin-chat"
-                        onClick={(event) =>
-                          togglePin(chat.id, event)
-                        }
-                        title={
-                          chat.pinned
-                            ? "Unpin chat"
-                            : "Pin chat"
-                        }
-                      >
-                        {chat.pinned ? "📌" : "☆"}
-                      </button>
-
-                      <button
-                        type="button"
-                        className="rename-chat"
-                        onClick={(
-                          event
-                        ) =>
-                          startRename(
-                            chat,
-                            event
-                          )
-                        }
-                        title="Rename chat"
-                      >
-                        ✏️
-                      </button>
-
-                      <button
-                        type="button"
-                        className="delete-chat"
-                        onClick={(
-                          event
-                        ) => {
-                          event.stopPropagation();
-
-                          deleteChat(
+                    <input
+                      className="rename-input"
+                      value={
+                        renameValue
+                      }
+                      autoFocus
+                      onChange={(
+                        event
+                      ) =>
+                        setRenameValue(
+                          event.target
+                            .value
+                        )
+                      }
+                      onKeyDown={(
+                        event
+                      ) => {
+                        if (
+                          event.key ===
+                          "Enter"
+                        ) {
+                          saveRename(
                             chat.id
                           );
-                        }}
-                        title="Delete chat"
-                      >
-                        🗑️
-                      </button>
-                    </>
+                        }
+
+                        if (
+                          event.key ===
+                          "Escape"
+                        ) {
+                          setRenamingChatId(
+                            null
+                          );
+                        }
+                      }}
+                      onClick={(event) =>
+                        event.stopPropagation()
+                      }
+                    />
+                  ) : (
+                    <span className="chat-title">
+                      {chat.title}
+                    </span>
                   )}
                 </div>
-              )
+
+                <div className="chat-actions">
+                  <button
+                    type="button"
+                    className="pin-chat"
+                    title={
+                      chat.pinned
+                        ? "Unpin Chat"
+                        : "Pin Chat"
+                    }
+                    onClick={(event) => {
+                      event.stopPropagation();
+
+                      togglePinChat(
+                        chat.id
+                      );
+                    }}
+                  >
+                    {chat.pinned
+                      ? "📌"
+                      : "☆"}
+                  </button>
+
+                  <button
+                    type="button"
+                    title="Rename Chat"
+                    onClick={(event) => {
+                      event.stopPropagation();
+
+                      startRename(
+                        chat
+                      );
+                    }}
+                  >
+                    ✏️
+                  </button>
+
+                  <button
+                    type="button"
+                    title="Delete Chat"
+                    onClick={(event) => {
+                      event.stopPropagation();
+
+                      deleteChat(
+                        chat.id
+                      );
+                    }}
+                  >
+                    🗑️
+                  </button>
+                </div>
+              </div>
             )
+          )}
+
+          {filteredChats.length ===
+            0 && (
+            <div className="no-chats">
+              No chats found
+            </div>
           )}
         </div>
 
         <div className="sidebar-bottom">
-          <button className="sidebar-option">
+          <button
+            type="button"
+            onClick={() =>
+              setSettingsOpen(true)
+            }
+          >
             ⚙️ Settings
           </button>
 
           <button
             type="button"
-            className="sidebar-option clear-all-button"
-            onClick={clearAllChats}
-            title="Delete all chats"
+            onClick={
+              clearAllChats
+            }
           >
             🗑️ Clear All Chats
-          </button>
-
-          <button className="sidebar-option">
-            👤 Profile
           </button>
         </div>
       </aside>
 
-      {/* =========================
+      {/* =====================================
           MAIN
-      ========================= */}
+      ====================================== */}
 
-      <main className="main">
-        <header className="header">
+      <main className="main-content">
+        <header className="top-header">
           <div>
-            <h3>
+            <h2>
               {activeChat?.title ||
-                "New Chat"}
-            </h3>
+                "Astra AI"}
+            </h2>
 
             <span>
-              Local AI • Llama 3.2
+              Your personal AI assistant
             </span>
           </div>
 
           <div className="header-actions">
             <button
               type="button"
-              className="export-button"
-              onClick={
-                exportChat
-              }
-              title="Export current chat"
-            >
-              📥 Export
-            </button>
-
-            <button
-              type="button"
-              className="import-button"
-              onClick={
-                importChat
-              }
-              title="Import chat"
-            >
-              📤 Import
-            </button>
-
-            <button
               className="theme-button"
               onClick={
                 toggleTheme
               }
-              title="Toggle theme"
+              title="Toggle Theme"
             >
               {darkMode
                 ? "☀️"
                 : "🌙"}
             </button>
+
+            <button
+              type="button"
+              className="export-button"
+              onClick={
+                exportChat
+              }
+              title="Export Chat"
+            >
+              📤
+            </button>
+
+            <button
+              type="button"
+              className="import-button"
+              onClick={() =>
+                fileInputRef.current?.click()
+              }
+              title="Import Chat"
+            >
+              📥
+            </button>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".txt"
+              style={{
+                display: "none",
+              }}
+              onChange={
+                importChat
+              }
+            />
           </div>
         </header>
 
-        {/* HIDDEN FILE INPUT */}
+        {/* =====================================
+            MESSAGES
+        ====================================== */}
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".txt"
-          onChange={
-            handleImportChat
-          }
-          style={{
-            display: "none",
-          }}
-        />
-
-        {/* =========================
-            CHAT AREA
-        ========================= */}
-
-        <section className="chat-area">
-          {!activeChat?.messages
-            ?.length ? (
-            <div className="welcome">
+        <div className="messages-container">
+          {messages.length ===
+          0 ? (
+            <div className="welcome-screen">
               <div className="welcome-icon">
-                🤖
+                ✦
               </div>
 
-              <h1>
-                Welcome to MyAI
-              </h1>
+              <h2>
+                Welcome to Astra AI
+              </h2>
 
               <p>
                 Your personal AI
-                assistant powered by
-                Llama 3.2.
+                assistant powered
+                by local AI.
               </p>
+
+              <div className="welcome-suggestions">
+                <button
+                  type="button"
+                  onClick={() =>
+                    useQuickPrompt(
+                      "Explain artificial intelligence in simple words"
+                    )
+                  }
+                >
+                  💡 Explain AI
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    useQuickPrompt(
+                      "Help me write a JavaScript program"
+                    )
+                  }
+                >
+                  💻 Write Code
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    useQuickPrompt(
+                      "Give me some study tips"
+                    )
+                  }
+                >
+                  📚 Study Tips
+                </button>
+              </div>
             </div>
           ) : (
-            <div className="messages">
-              {activeChat.messages.map(
-                (message) => (
-                  <div
-                    key={message.id}
-                    className={`message-row ${
-                      message.role
-                    }`}
-                  >
-                    <div className="message-avatar">
+            messages.map(
+              (message, index) => (
+                <div
+                  key={message.id}
+                  className={`message-row ${
+                    message.role
+                  }`}
+                >
+                  <div className="message-avatar">
+                    {message.role ===
+                    "user"
+                      ? "👤"
+                      : "✦"}
+                  </div>
+
+                  <div className="message-content-wrapper">
+                    <div className="message-name">
                       {message.role ===
                       "user"
-                        ? "👤"
-                        : "🤖"}
+                        ? "You"
+                        : "Astra AI"}
                     </div>
 
-                    <div className="message-content">
-                      <div className="message-name">
-                        {message.role ===
-                        "user"
-                          ? "You"
-                          : "MyAI"}
-                      </div>
-
-                      <div className="message-bubble">
+                    <div className="message-bubble">
+                      {message.role ===
+                      "assistant" ? (
                         <ReactMarkdown
                           components={{
-                            pre({
-                              children,
-                            }) {
-                              const codeElement =
-                                React.Children.toArray(
-                                  children
-                                )[0];
-
-                              const codeText =
-                                codeElement
-                                  ?.props
-                                  ?.children ||
-                                "";
-
-                              const code =
-                                String(
-                                  codeText
-                                ).replace(
-                                  /\n$/,
-                                  ""
-                                );
-
-                              const codeId =
-                                Math.random();
-
-                              return (
-                                <div className="code-block">
-                                  <div className="code-header">
-                                    <span>
-                                      Code
-                                    </span>
-
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        copyCode(
-                                          code,
-                                          codeId
-                                        )
-                                      }
-                                    >
-                                      {copiedId ===
-                                      `code-${codeId}`
-                                        ? "Copied!"
-                                        : "Copy"}
-                                    </button>
-                                  </div>
-
-                                  <pre>
-                                    {
-                                      children
-                                    }
-                                  </pre>
-                                </div>
-                              );
-                            },
-
-                            code({
-                              inline,
-                              children,
-                            }) {
-                              if (
-                                inline
-                              ) {
-                                return (
-                                  <code className="inline-code">
-                                    {
-                                      children
-                                    }
-                                  </code>
-                                );
-                              }
-
-                              return (
-                                <code>
-                                  {
-                                    children
-                                  }
-                                </code>
-                              );
-                            },
+                            code: MarkdownCode,
                           }}
                         >
                           {
-                            message.text
+                            message.content
                           }
                         </ReactMarkdown>
-                      </div>
-
-                      {/* TIMESTAMP */}
-
-                      {message.timestamp && (
-                        <div className="message-timestamp">
-                          {formatTime(
-                            message.timestamp
-                          )}
+                      ) : (
+                        <div className="user-message-text">
+                          {
+                            message.content
+                          }
                         </div>
                       )}
+                    </div>
 
-                      {/* ACTIONS */}
+                    <div className="message-footer">
+                      {showTimestamps &&
+                        message.timestamp && (
+                          <span className="message-time">
+                            {formatTime(
+                              message.timestamp
+                            )}
+                          </span>
+                        )}
 
                       {message.role ===
                         "assistant" && (
@@ -1536,62 +1335,69 @@ function App() {
                             type="button"
                             onClick={() =>
                               copyMessage(
-                                message.text,
+                                message.content,
                                 message.id
                               )
                             }
                           >
-                            {copiedId ===
+                            {copiedMessageId ===
                             message.id
                               ? "✓ Copied"
                               : "📋 Copy"}
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={
-                              regenerateResponse
-                            }
-                          >
-                            🔄 Regenerate
-                          </button>
+                          {index ===
+                            messages.length -
+                              1 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                regenerateResponse(
+                                  index
+                                )
+                              }
+                              disabled={
+                                loading
+                              }
+                            >
+                              🔄 Regenerate
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
                   </div>
-                )
-              )}
-
-              {/* TYPING */}
-
-              {loading && (
-                <div className="message-row assistant">
-                  <div className="message-avatar">
-                    🤖
-                  </div>
-
-                  <div className="message-content">
-                    <div className="message-name">
-                      MyAI
-                    </div>
-
-                    <div className="typing">
-                      <span></span>
-                      <span></span>
-                      <span></span>
-                    </div>
-                  </div>
                 </div>
-              )}
+              )
+            )
+          )}
 
-              <div ref={messagesEndRef} />
+          {loading && (
+            <div className="message-row assistant">
+              <div className="message-avatar">
+                ✦
+              </div>
+
+              <div className="message-content-wrapper">
+                <div className="message-name">
+                  Astra AI
+                </div>
+
+                <div className="message-bubble typing-bubble">
+                  <span className="typing-dot"></span>
+                  <span className="typing-dot"></span>
+                  <span className="typing-dot"></span>
+                </div>
+              </div>
             </div>
           )}
-        </section>
 
-        {/* =========================
-            INPUT AREA
-        ========================= */}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* =====================================
+            INPUT
+        ====================================== */}
 
         <div className="input-area">
           <div className="input-wrapper">
@@ -1605,9 +1411,12 @@ function App() {
               onKeyDown={
                 handleInputKeyDown
               }
-              placeholder="Message MyAI..."
-              rows="1"
-              disabled={loading}
+              placeholder={
+                enterToSend
+                  ? "Message Astra AI... (Enter to send)"
+                  : "Message Astra AI... (Enter for new line)"
+              }
+              rows={1}
             />
 
             {loading ? (
@@ -1618,7 +1427,7 @@ function App() {
                   stopGenerating
                 }
               >
-                ■
+                ⏹ Stop
               </button>
             ) : (
               <button
@@ -1637,11 +1446,559 @@ function App() {
           </div>
 
           <div className="input-hint">
-            Press Enter to send •
-            Shift + Enter for new line
+            {enterToSend
+              ? "Press Enter to send • Shift + Enter for new line"
+              : "Enter creates a new line • Click send to send"}
           </div>
         </div>
       </main>
+
+      {/* =====================================
+          RIGHT DASHBOARD
+      ====================================== */}
+
+      <aside className="dashboard-panel">
+
+        {/* STATUS */}
+
+        <div className="dashboard-card status-card">
+          <div className="dashboard-card-header">
+            <div>
+              <span className="dashboard-label">
+                SYSTEM STATUS
+              </span>
+
+              <h3>
+                Astra AI System
+              </h3>
+            </div>
+
+            <div
+              className={`status-dot ${
+                backendStatus
+              }`}
+            ></div>
+          </div>
+
+          <div className="status-row">
+            <span>Backend</span>
+
+            <strong
+              className={
+                backendStatus ===
+                "online"
+                  ? "status-online"
+                  : backendStatus ===
+                    "checking"
+                  ? "status-checking"
+                  : "status-offline"
+              }
+            >
+              {backendStatus ===
+              "online"
+                ? "Online"
+                : backendStatus ===
+                  "checking"
+                ? "Checking..."
+                : "Offline"}
+            </strong>
+          </div>
+
+          <div className="status-row">
+            <span>AI Model</span>
+
+            <strong>
+              Llama 3.2
+            </strong>
+          </div>
+
+          <div className="status-row">
+            <span>Mode</span>
+
+            <strong>
+              Local AI
+            </strong>
+          </div>
+        </div>
+
+        {/* QUICK ACTIONS */}
+
+        <div className="dashboard-card">
+          <div className="dashboard-card-header">
+            <div>
+              <span className="dashboard-label">
+                QUICK ACTIONS
+              </span>
+
+              <h3>
+                What can I do?
+              </h3>
+            </div>
+
+            <span className="dashboard-card-icon">
+              ⚡
+            </span>
+          </div>
+
+          <div className="quick-actions-grid">
+
+            <button
+              type="button"
+              onClick={() =>
+                useQuickPrompt(
+                  "Explain artificial intelligence in simple words"
+                )
+              }
+            >
+              <span>🧠</span>
+
+              <strong>
+                Explain AI
+              </strong>
+
+              <small>
+                Learn something
+              </small>
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                useQuickPrompt(
+                  "Help me write clean JavaScript code"
+                )
+              }
+            >
+              <span>💻</span>
+
+              <strong>
+                Write Code
+              </strong>
+
+              <small>
+                Coding assistant
+              </small>
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                useQuickPrompt(
+                  "Give me useful study tips for students"
+                )
+              }
+            >
+              <span>📚</span>
+
+              <strong>
+                Study
+              </strong>
+
+              <small>
+                Study smarter
+              </small>
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                useQuickPrompt(
+                  "Give me 5 creative ideas for a project"
+                )
+              }
+            >
+              <span>💡</span>
+
+              <strong>
+                Ideas
+              </strong>
+
+              <small>
+                Get inspiration
+              </small>
+            </button>
+
+          </div>
+        </div>
+
+        {/* STATISTICS */}
+
+        <div className="dashboard-card">
+
+          <div className="dashboard-card-header">
+            <div>
+              <span className="dashboard-label">
+                YOUR ACTIVITY
+              </span>
+
+              <h3>
+                Chat Statistics
+              </h3>
+            </div>
+
+            <span className="dashboard-card-icon">
+              📊
+            </span>
+          </div>
+
+          <div className="stats-grid">
+
+            <div className="stat-box">
+              <span>💬</span>
+
+              <strong>
+                {chats.length}
+              </strong>
+
+              <small>
+                Chats
+              </small>
+            </div>
+
+            <div className="stat-box">
+              <span>📨</span>
+
+              <strong>
+                {totalMessages}
+              </strong>
+
+              <small>
+                Messages
+              </small>
+            </div>
+
+            <div className="stat-box">
+              <span>👤</span>
+
+              <strong>
+                {userMessages}
+              </strong>
+
+              <small>
+                You
+              </small>
+            </div>
+
+            <div className="stat-box">
+              <span>✦</span>
+
+              <strong>
+                {aiMessages}
+              </strong>
+
+              <small>
+                Astra AI
+              </small>
+            </div>
+
+          </div>
+        </div>
+
+        {/* RECENT CHATS */}
+
+        <div className="dashboard-card recent-card">
+
+          <div className="dashboard-card-header">
+            <div>
+              <span className="dashboard-label">
+                RECENT
+              </span>
+
+              <h3>
+                Recent Chats
+              </h3>
+            </div>
+
+            <span className="dashboard-card-icon">
+              🕘
+            </span>
+          </div>
+
+          <div className="recent-chats">
+
+            {chats
+              .slice(0, 5)
+              .map((chat) => (
+                <button
+                  type="button"
+                  key={chat.id}
+                  className={`recent-chat ${
+                    chat.id ===
+                    activeChatId
+                      ? "selected"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    selectChat(
+                      chat.id
+                    )
+                  }
+                >
+                  <span className="recent-chat-icon">
+                    {chat.pinned
+                      ? "📌"
+                      : "💬"}
+                  </span>
+
+                  <span className="recent-chat-info">
+                    <strong>
+                      {chat.title}
+                    </strong>
+
+                    <small>
+                      {
+                        chat.messages
+                          ?.length
+                      }{" "}
+                      messages
+                    </small>
+                  </span>
+                </button>
+              ))}
+
+          </div>
+        </div>
+
+        {/* FOOTER */}
+
+        <div className="dashboard-footer">
+
+          <div className="footer-ai-icon">
+            ✦
+          </div>
+
+          <div>
+            <strong>
+              Astra AI
+            </strong>
+
+            <span>
+              Powered by local Llama 3.2
+            </span>
+          </div>
+
+        </div>
+
+      </aside>
+
+      {/* =====================================
+          SETTINGS
+      ====================================== */}
+
+      {settingsOpen && (
+        <div
+          className="settings-overlay"
+          onClick={() =>
+            setSettingsOpen(false)
+          }
+        >
+          <div
+            className="settings-panel"
+            onClick={(event) =>
+              event.stopPropagation()
+            }
+          >
+
+            <div className="settings-header">
+
+              <div>
+                <h2>
+                  Settings
+                </h2>
+
+                <p>
+                  Customize your
+                  Astra AI experience
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="settings-close"
+                onClick={() =>
+                  setSettingsOpen(
+                    false
+                  )
+                }
+              >
+                ✕
+              </button>
+
+            </div>
+
+            {/* APPEARANCE */}
+
+            <div className="settings-section">
+
+              <h3>
+                Appearance
+              </h3>
+
+              <div className="settings-item">
+
+                <div>
+                  <strong>
+                    Theme
+                  </strong>
+
+                  <span>
+                    {darkMode
+                      ? "Dark Mode"
+                      : "Light Mode"}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  className="settings-action"
+                  onClick={
+                    toggleTheme
+                  }
+                >
+                  {darkMode
+                    ? "☀️ Light"
+                    : "🌙 Dark"}
+                </button>
+
+              </div>
+
+            </div>
+
+            {/* CHAT */}
+
+            <div className="settings-section">
+
+              <h3>
+                Chat
+              </h3>
+
+              <div className="settings-item">
+
+                <div>
+                  <strong>
+                    Enter to Send
+                  </strong>
+
+                  <span>
+                    Press Enter to
+                    send your
+                    message
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  className="settings-action"
+                  onClick={() =>
+                    setEnterToSend(
+                      (prev) =>
+                        !prev
+                    )
+                  }
+                >
+                  {enterToSend
+                    ? "ON"
+                    : "OFF"}
+                </button>
+
+              </div>
+
+              <div className="settings-item">
+
+                <div>
+                  <strong>
+                    Show Timestamps
+                  </strong>
+
+                  <span>
+                    Show message
+                    time
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  className="settings-action"
+                  onClick={() =>
+                    setShowTimestamps(
+                      (prev) =>
+                        !prev
+                    )
+                  }
+                >
+                  {showTimestamps
+                    ? "ON"
+                    : "OFF"}
+                </button>
+
+              </div>
+
+              <div className="settings-item">
+
+                <div>
+                  <strong>
+                    Clear All
+                    Chats
+                  </strong>
+
+                  <span>
+                    Delete all saved
+                    conversations
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  className="settings-action settings-danger"
+                  onClick={
+                    clearAllChats
+                  }
+                >
+                  🗑️ Clear
+                </button>
+
+              </div>
+
+            </div>
+
+            {/* ABOUT */}
+
+            <div className="settings-section">
+
+              <h3>
+                About
+              </h3>
+
+              <div className="about-myai">
+
+                <div className="about-icon">
+                  ✦
+                </div>
+
+                <div>
+                  <strong>
+                    Astra AI
+                  </strong>
+
+                  <span>
+                    Personal AI
+                    Assistant
+                  </span>
+
+                  <small>
+                    Powered by
+                    local Llama
+                    3.2
+                  </small>
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }
