@@ -4,79 +4,109 @@ const cors = require("cors");
 const app = express();
 
 app.use(cors());
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json());
 
-const OLLAMA_URL = "http://localhost:11434/api/chat";
+const PORT = 5000;
+const OLLAMA_URL = "http://localhost:11434/api/generate";
 const MODEL = "llama3.2";
 
-// Only the last N messages are sent to the model (keeps it fast and inside the context window)
-const MAX_HISTORY = 20;
-
-const SYSTEM_PROMPT = `You are MyAI, a helpful personal AI assistant.
-
-Answer the user clearly and naturally.
-
-IMPORTANT CODE FORMATTING RULE:
-If your answer contains programming code, ALWAYS put the code inside a Markdown code block.
-
-Use triple backticks and specify the language whenever possible.
-
-Example:
-
-\`\`\`javascript
-const greeting = "Hello World!";
-console.log(greeting);
-\`\`\`
-
-Never show programming code as plain text.
-
-For normal explanations, use normal Markdown formatting.`;
+// -----------------------------------------
+// HOME / SERVER TEST
+// -----------------------------------------
 
 app.get("/", (req, res) => {
   res.json({
-    message: "MyAI Backend is running successfully! 🚀",
+    message: "Astra AI Backend is running successfully! 🚀",
   });
 });
 
+// -----------------------------------------
+// CHAT
+// -----------------------------------------
+
 app.post("/chat", async (req, res) => {
   try {
-    const { messages, message } = req.body;
+    const { message, messages = [] } = req.body;
 
-    // Accept the full history (messages) and still support the old { message } format
-    let history = [];
-
-    if (Array.isArray(messages)) {
-      history = messages
-        .filter(
-          (m) =>
-            m &&
-            (m.role === "user" || m.role === "assistant") &&
-            typeof m.content === "string" &&
-            m.content.trim()
-        )
-        .map((m) => ({ role: m.role, content: m.content }));
-    } else if (typeof message === "string" && message.trim()) {
-      history = [{ role: "user", content: message }];
-    }
-
-    if (history.length === 0 || history[history.length - 1].role !== "user") {
+    if (!message || !message.trim()) {
       return res.status(400).json({
-        error: "A user message is required",
+        error: "Message is required",
       });
     }
 
-    const recent = history.slice(-MAX_HISTORY);
+    // -----------------------------------------
+    // KEEP ONLY RECENT HISTORY
+    // This prevents very long chats from making
+    // Ollama unnecessarily slow.
+    // -----------------------------------------
+
+    const recentHistory = messages
+      .filter(
+        (item) =>
+          item &&
+          (item.role === "user" ||
+            item.role === "assistant") &&
+          item.content
+      )
+      .slice(-10);
+
+    const conversationHistory =
+      recentHistory
+        .map((item) => {
+          return `${item.role === "user" ? "User" : "Astra AI"}: ${
+            item.content
+          }`;
+        })
+        .join("\n");
+
+    // -----------------------------------------
+    // ASTRA AI PROMPT
+    // -----------------------------------------
+
+    const prompt = `You are Astra AI, a helpful personal AI assistant.
+
+Answer the user's question clearly and naturally.
+
+IMPORTANT RULES:
+
+1. Give direct and useful answers.
+2. Do not unnecessarily repeat the question.
+3. Keep simple questions concise.
+4. If programming code is needed, ALWAYS use Markdown code blocks.
+5. Never put programming code as plain text.
+6. Do not pretend that you have live internet access.
+7. If the user asks for current/latest information and no web-search results are provided, clearly say that live web access is not currently available.
+8. Use the conversation history only when it helps answer the current question.
+
+Recent conversation:
+${conversationHistory || "No previous conversation."}
+
+Current user message:
+${message}
+
+Astra AI answer:`;
+
+    // -----------------------------------------
+    // OLLAMA
+    // -----------------------------------------
 
     const response = await fetch(OLLAMA_URL, {
       method: "POST",
+
       headers: {
         "Content-Type": "application/json",
       },
+
       body: JSON.stringify({
         model: MODEL,
-        messages: [{ role: "system", content: SYSTEM_PROMPT }, ...recent],
+        prompt: prompt,
         stream: false,
-        options: { num_ctx: 4096 },
+
+        // Faster / more controlled responses
+        options: {
+          temperature: 0.5,
+          num_predict: 512,
+        },
       }),
     });
 
@@ -91,19 +121,27 @@ app.post("/chat", async (req, res) => {
     const data = await response.json();
 
     res.json({
-      reply: data.message?.content ?? "",
+      reply:
+        data.response ||
+        "Sorry, I could not generate a response.",
     });
   } catch (error) {
-    console.error("Ollama Error:", error);
+    console.error("Astra AI Error:", error);
 
     res.status(500).json({
-      error: error.message || "AI response failed",
+      error:
+        error.message ||
+        "AI response failed",
     });
   }
 });
 
-const PORT = 5000;
+// -----------------------------------------
+// START SERVER
+// -----------------------------------------
 
 app.listen(PORT, "127.0.0.1", () => {
-  console.log(`MyAI Backend running at http://localhost:${PORT}`);
+  console.log(
+    `Astra AI Backend running at http://localhost:${PORT}`
+  );
 });
