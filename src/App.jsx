@@ -2,10 +2,6 @@ import React, { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import "./App.css";
 
-// -----------------------------------------
-// HELPERS
-// -----------------------------------------
-
 const buildHistory = (msgs) =>
   msgs
     .filter((m) => !m.isError && m.content)
@@ -15,9 +11,9 @@ const buildHistory = (msgs) =>
     }));
 
 function App() {
-  // -----------------------------------------
+  // =========================================
   // CHATS
-  // -----------------------------------------
+  // =========================================
 
   const [chats, setChats] = useState(() => {
     const saved = localStorage.getItem("astra-chats");
@@ -41,72 +37,95 @@ function App() {
   });
 
   const [activeChatId, setActiveChatId] = useState(() => {
-    const saved = localStorage.getItem("astra-active-chat");
+    const saved = localStorage.getItem(
+      "astra-active-chat"
+    );
+
     return saved ? Number(saved) : null;
   });
 
-  // -----------------------------------------
-  // THEME
-  // -----------------------------------------
+  // =========================================
+  // SETTINGS
+  // =========================================
 
   const [darkMode, setDarkMode] = useState(() => {
-    return localStorage.getItem("astra-theme") === "dark";
+    return (
+      localStorage.getItem("astra-theme") ===
+      "dark"
+    );
   });
 
-  // -----------------------------------------
-  // SETTINGS
-  // -----------------------------------------
+  const [enterToSend, setEnterToSend] =
+    useState(() => {
+      const saved = localStorage.getItem(
+        "astra-enter-to-send"
+      );
 
-  const [enterToSend, setEnterToSend] = useState(() => {
-    const saved = localStorage.getItem("astra-enter-to-send");
-    return saved === null ? true : saved === "true";
-  });
+      return saved === null
+        ? true
+        : saved === "true";
+    });
 
-  const [showTimestamps, setShowTimestamps] = useState(() => {
-    const saved = localStorage.getItem("astra-show-timestamps");
-    return saved === null ? true : saved === "true";
-  });
+  const [showTimestamps, setShowTimestamps] =
+    useState(() => {
+      const saved = localStorage.getItem(
+        "astra-show-timestamps"
+      );
 
-  // -----------------------------------------
+      return saved === null
+        ? true
+        : saved === "true";
+    });
+
+  // =========================================
   // UI STATES
-  // -----------------------------------------
+  // =========================================
 
   const [searchText, setSearchText] = useState("");
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] =
+    useState(false);
 
-  const [renamingChatId, setRenamingChatId] = useState(null);
-  const [renameValue, setRenameValue] = useState("");
+  const [renamingChatId, setRenamingChatId] =
+    useState(null);
 
-  const [copiedMessageId, setCopiedMessageId] = useState(null);
-  const [copiedCodeId, setCopiedCodeId] = useState(null);
+  const [renameValue, setRenameValue] =
+    useState("");
 
-  const [backendStatus, setBackendStatus] = useState("checking");
+  const [copiedMessageId, setCopiedMessageId] =
+    useState(null);
 
-  // -----------------------------------------
+  const [copiedCodeId, setCopiedCodeId] =
+    useState(null);
+
+  const [backendStatus, setBackendStatus] =
+    useState("checking");
+
+  // =========================================
   // REFS
-  // -----------------------------------------
+  // =========================================
 
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const abortControllerRef = useRef(null);
 
-  // -----------------------------------------
+  // =========================================
   // ACTIVE CHAT
-  // -----------------------------------------
+  // =========================================
 
   useEffect(() => {
     if (chats.length === 0) {
-      const newChat = {
+      const newChatItem = {
         id: Date.now(),
         title: "New Chat",
         messages: [],
         pinned: false,
       };
 
-      setChats([newChat]);
-      setActiveChatId(newChat.id);
+      setChats([newChatItem]);
+      setActiveChatId(newChatItem.id);
+
       return;
     }
 
@@ -119,9 +138,9 @@ function App() {
     }
   }, [chats, activeChatId]);
 
-  // -----------------------------------------
+  // =========================================
   // LOCAL STORAGE
-  // -----------------------------------------
+  // =========================================
 
   useEffect(() => {
     localStorage.setItem(
@@ -160,9 +179,9 @@ function App() {
     );
   }, [showTimestamps]);
 
-  // -----------------------------------------
+  // =========================================
   // AUTO SCROLL
-  // -----------------------------------------
+  // =========================================
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
@@ -170,9 +189,9 @@ function App() {
     });
   }, [chats, activeChatId, loading]);
 
-  // -----------------------------------------
+  // =========================================
   // BACKEND STATUS
-  // -----------------------------------------
+  // =========================================
 
   useEffect(() => {
     let mounted = true;
@@ -180,10 +199,7 @@ function App() {
     const checkBackend = async () => {
       try {
         const response = await fetch(
-          "http://localhost:5000",
-          {
-            method: "GET",
-          }
+          "http://localhost:5000"
         );
 
         if (mounted && response.ok) {
@@ -211,9 +227,9 @@ function App() {
     };
   }, []);
 
-  // -----------------------------------------
-  // CURRENT CHAT
-  // -----------------------------------------
+  // =========================================
+  // ACTIVE CHAT DATA
+  // =========================================
 
   const activeChat =
     chats.find(
@@ -222,9 +238,9 @@ function App() {
 
   const messages = activeChat?.messages || [];
 
-  // -----------------------------------------
-  // SEARCH
-  // -----------------------------------------
+  // =========================================
+  // FILTER CHATS
+  // =========================================
 
   const filteredChats = [...chats]
     .filter((chat) => {
@@ -232,7 +248,8 @@ function App() {
         return true;
       }
 
-      const search = searchText.toLowerCase();
+      const search =
+        searchText.toLowerCase();
 
       return (
         chat.title
@@ -252,9 +269,9 @@ function App() {
       return b.id - a.id;
     });
 
-  // -----------------------------------------
+  // =========================================
   // NEW CHAT
-  // -----------------------------------------
+  // =========================================
 
   const newChat = () => {
     const chat = {
@@ -269,18 +286,18 @@ function App() {
     setInput("");
   };
 
-  // -----------------------------------------
+  // =========================================
   // SELECT CHAT
-  // -----------------------------------------
+  // =========================================
 
   const selectChat = (id) => {
     setActiveChatId(id);
     setInput("");
   };
 
-  // -----------------------------------------
+  // =========================================
   // DELETE CHAT
-  // -----------------------------------------
+  // =========================================
 
   const deleteChat = (id) => {
     const remaining = chats.filter(
@@ -297,19 +314,22 @@ function App() {
 
       setChats([newChatItem]);
       setActiveChatId(newChatItem.id);
+
       return;
     }
 
     setChats(remaining);
 
     if (id === activeChatId) {
-      setActiveChatId(remaining[0].id);
+      setActiveChatId(
+        remaining[0].id
+      );
     }
   };
 
-  // -----------------------------------------
-  // PIN
-  // -----------------------------------------
+  // =========================================
+  // PIN CHAT
+  // =========================================
 
   const togglePinChat = (id) => {
     setChats((prev) =>
@@ -324,18 +344,16 @@ function App() {
     );
   };
 
-  // -----------------------------------------
+  // =========================================
   // CLEAR ALL
-  // -----------------------------------------
+  // =========================================
 
   const clearAllChats = () => {
     const confirmed = window.confirm(
       "Are you sure you want to delete all chats?"
     );
 
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     const newChatItem = {
       id: Date.now(),
@@ -349,9 +367,9 @@ function App() {
     setInput("");
   };
 
-  // -----------------------------------------
+  // =========================================
   // RENAME
-  // -----------------------------------------
+  // =========================================
 
   const startRename = (chat) => {
     setRenamingChatId(chat.id);
@@ -359,7 +377,8 @@ function App() {
   };
 
   const saveRename = (id) => {
-    const newTitle = renameValue.trim();
+    const newTitle =
+      renameValue.trim();
 
     if (!newTitle) {
       setRenamingChatId(null);
@@ -381,9 +400,9 @@ function App() {
     setRenameValue("");
   };
 
-  // -----------------------------------------
+  // =========================================
   // SEND MESSAGE
-  // -----------------------------------------
+  // =========================================
 
   const sendMessage = async () => {
     const message = input.trim();
@@ -400,23 +419,27 @@ function App() {
       id: Date.now(),
       role: "user",
       content: message,
-      timestamp: new Date().toISOString(),
+      timestamp:
+        new Date().toISOString(),
     };
 
-    const historyForBackend = buildHistory([
-      ...(activeChat?.messages || []),
-      userMessage,
-    ]);
+    const historyForBackend =
+      buildHistory([
+        ...(activeChat?.messages || []),
+        userMessage,
+      ]);
 
     setChats((prev) =>
       prev.map((chat) =>
         chat.id === activeChatId
           ? {
               ...chat,
+
               title:
                 chat.messages.length === 0
                   ? message.slice(0, 35)
                   : chat.title,
+
               messages: [
                 ...chat.messages,
                 userMessage,
@@ -429,29 +452,36 @@ function App() {
     setInput("");
     setLoading(true);
 
-    const controller = new AbortController();
+    const controller =
+      new AbortController();
 
-    abortControllerRef.current = controller;
+    abortControllerRef.current =
+      controller;
 
     try {
       const response = await fetch(
         "http://localhost:5000/chat",
         {
           method: "POST",
+
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type":
+              "application/json",
           },
 
           body: JSON.stringify({
             message,
-            messages: historyForBackend,
+            messages:
+              historyForBackend,
           }),
 
-          signal: controller.signal,
+          signal:
+            controller.signal,
         }
       );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!response.ok) {
         throw new Error(
@@ -464,7 +494,8 @@ function App() {
         id: Date.now() + 1,
         role: "assistant",
         content: data.reply,
-        timestamp: new Date().toISOString(),
+        timestamp:
+          new Date().toISOString(),
       };
 
       setChats((prev) =>
@@ -472,6 +503,7 @@ function App() {
           chat.id === activeChatId
             ? {
                 ...chat,
+
                 messages: [
                   ...chat.messages,
                   aiMessage,
@@ -481,7 +513,10 @@ function App() {
         )
       );
     } catch (error) {
-      if (error.name === "AbortError") {
+      if (
+        error.name ===
+        "AbortError"
+      ) {
         return;
       }
 
@@ -489,9 +524,12 @@ function App() {
         id: Date.now() + 1,
         role: "assistant",
         isError: true,
+
         content:
           "Sorry, I could not connect to the AI server. Please make sure the Astra AI backend and Ollama are running.",
-        timestamp: new Date().toISOString(),
+
+        timestamp:
+          new Date().toISOString(),
       };
 
       setChats((prev) =>
@@ -499,6 +537,7 @@ function App() {
           chat.id === activeChatId
             ? {
                 ...chat,
+
                 messages: [
                   ...chat.messages,
                   errorMessage,
@@ -509,15 +548,18 @@ function App() {
       );
     } finally {
       setLoading(false);
-      abortControllerRef.current = null;
+      abortControllerRef.current =
+        null;
     }
   };
 
-  // -----------------------------------------
+  // =========================================
   // ENTER TO SEND
-  // -----------------------------------------
+  // =========================================
 
-  const handleInputKeyDown = (event) => {
+  const handleInputKeyDown = (
+    event
+  ) => {
     if (event.key !== "Enter") {
       return;
     }
@@ -531,24 +573,27 @@ function App() {
     }
 
     event.preventDefault();
+
     sendMessage();
   };
 
-  // -----------------------------------------
+  // =========================================
   // STOP
-  // -----------------------------------------
+  // =========================================
 
   const stopGenerating = () => {
-    if (abortControllerRef.current) {
+    if (
+      abortControllerRef.current
+    ) {
       abortControllerRef.current.abort();
     }
 
     setLoading(false);
   };
 
-  // -----------------------------------------
+  // =========================================
   // REGENERATE
-  // -----------------------------------------
+  // =========================================
 
   const regenerateResponse = async (
     messageIndex
@@ -564,7 +609,8 @@ function App() {
 
     if (
       !previousUserMessage ||
-      previousUserMessage.role !== "user"
+      previousUserMessage.role !==
+        "user"
     ) {
       return;
     }
@@ -580,6 +626,7 @@ function App() {
         chat.id === activeChatId
           ? {
               ...chat,
+
               messages:
                 chat.messages.slice(
                   0,
@@ -592,29 +639,38 @@ function App() {
 
     setLoading(true);
 
-    const controller = new AbortController();
+    const controller =
+      new AbortController();
 
-    abortControllerRef.current = controller;
+    abortControllerRef.current =
+      controller;
 
     try {
       const response = await fetch(
         "http://localhost:5000/chat",
         {
           method: "POST",
+
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type":
+              "application/json",
           },
+
           body: JSON.stringify({
             message:
               previousUserMessage.content,
+
             messages:
               buildHistory(history),
           }),
-          signal: controller.signal,
+
+          signal:
+            controller.signal,
         }
       );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!response.ok) {
         throw new Error(
@@ -627,7 +683,8 @@ function App() {
         id: Date.now(),
         role: "assistant",
         content: data.reply,
-        timestamp: new Date().toISOString(),
+        timestamp:
+          new Date().toISOString(),
       };
 
       setChats((prev) =>
@@ -635,6 +692,7 @@ function App() {
           chat.id === activeChatId
             ? {
                 ...chat,
+
                 messages: [
                   ...chat.messages,
                   aiMessage,
@@ -644,7 +702,10 @@ function App() {
         )
       );
     } catch (error) {
-      if (error.name === "AbortError") {
+      if (
+        error.name ===
+        "AbortError"
+      ) {
         return;
       }
 
@@ -652,8 +713,10 @@ function App() {
         id: Date.now(),
         role: "assistant",
         isError: true,
-        content: "Regeneration failed.",
-        timestamp: new Date().toISOString(),
+        content:
+          "Regeneration failed.",
+        timestamp:
+          new Date().toISOString(),
       };
 
       setChats((prev) =>
@@ -661,6 +724,7 @@ function App() {
           chat.id === activeChatId
             ? {
                 ...chat,
+
                 messages: [
                   ...chat.messages,
                   errorMessage,
@@ -671,13 +735,14 @@ function App() {
       );
     } finally {
       setLoading(false);
-      abortControllerRef.current = null;
+      abortControllerRef.current =
+        null;
     }
   };
 
-  // -----------------------------------------
+  // =========================================
   // COPY MESSAGE
-  // -----------------------------------------
+  // =========================================
 
   const copyMessage = async (
     content,
@@ -698,9 +763,9 @@ function App() {
     }
   };
 
-  // -----------------------------------------
+  // =========================================
   // COPY CODE
-  // -----------------------------------------
+  // =========================================
 
   const copyCode = async (
     code,
@@ -721,35 +786,42 @@ function App() {
     }
   };
 
-  // -----------------------------------------
-  // EXPORT
-  // -----------------------------------------
+  // =========================================
+  // EXPORT CHAT
+  // =========================================
 
   const exportChat = () => {
-    if (!activeChat) {
-      return;
-    }
+    if (!activeChat) return;
 
-    let text = `Astra AI Chat\n`;
+    let text = "Astra AI Chat\n";
+
     text += `Title: ${activeChat.title}\n`;
-    text += `================================\n\n`;
+
+    text +=
+      "================================\n\n";
 
     activeChat.messages.forEach(
       (message) => {
         text += `${
-          message.role === "user"
+          message.role ===
+          "user"
             ? "You"
             : "Astra AI"
         }:\n`;
 
         text += `${message.content}\n\n`;
-        text += `--------------------------------\n\n`;
+
+        text +=
+          "--------------------------------\n\n";
       }
     );
 
-    const blob = new Blob([text], {
-      type: "text/plain",
-    });
+    const blob = new Blob(
+      [text],
+      {
+        type: "text/plain",
+      }
+    );
 
     const url =
       URL.createObjectURL(blob);
@@ -759,10 +831,11 @@ function App() {
 
     link.href = url;
 
-    link.download = `${
-      activeChat.title ||
-      "astra-ai-chat"
-    }.txt`;
+    link.download =
+      `${
+        activeChat.title ||
+        "astra-ai-chat"
+      }.txt`;
 
     document.body.appendChild(link);
 
@@ -773,19 +846,20 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
-  // -----------------------------------------
-  // IMPORT
-  // -----------------------------------------
+  // =========================================
+  // IMPORT CHAT
+  // =========================================
 
-  const importChat = (event) => {
+  const importChat = (
+    event
+  ) => {
     const file =
       event.target.files?.[0];
 
-    if (!file) {
-      return;
-    }
+    if (!file) return;
 
-    const reader = new FileReader();
+    const reader =
+      new FileReader();
 
     reader.onload = () => {
       const content = String(
@@ -794,12 +868,14 @@ function App() {
 
       const importedChat = {
         id: Date.now(),
+
         title:
           file.name.replace(
             ".txt",
             ""
           ) ||
           "Imported Chat",
+
         messages: [
           {
             id: Date.now() + 1,
@@ -809,6 +885,7 @@ function App() {
               new Date().toISOString(),
           },
         ],
+
         pinned: false,
       };
 
@@ -827,22 +904,14 @@ function App() {
     event.target.value = "";
   };
 
-  // -----------------------------------------
-  // THEME
-  // -----------------------------------------
-
-  const toggleTheme = () => {
-    setDarkMode((prev) => !prev);
-  };
-
-  // -----------------------------------------
+  // =========================================
   // TIME
-  // -----------------------------------------
+  // =========================================
 
-  const formatTime = (timestamp) => {
-    if (!timestamp) {
-      return "";
-    }
+  const formatTime = (
+    timestamp
+  ) => {
+    if (!timestamp) return "";
 
     return new Date(
       timestamp
@@ -852,30 +921,37 @@ function App() {
     });
   };
 
-  // -----------------------------------------
+  // =========================================
   // MARKDOWN CODE
-  // -----------------------------------------
+  // =========================================
 
   const MarkdownCode = ({
     inline,
     children,
   }) => {
-    const code = String(children).replace(
-      /\n$/,
-      ""
-    );
+    const code = String(
+      children
+    ).replace(/\n$/, "");
 
     const codeId =
       `${Date.now()}-${Math.random()}`;
 
     if (inline) {
-      return <code>{children}</code>;
+      return (
+        <code>
+          {children}
+        </code>
+      );
     }
 
     return (
       <div className="code-block-wrapper">
+
         <div className="code-block-header">
-          <span>Code</span>
+
+          <span>
+            Code
+          </span>
 
           <button
             type="button"
@@ -887,88 +963,107 @@ function App() {
               )
             }
           >
-            {copiedCodeId === codeId
+            {copiedCodeId ===
+            codeId
               ? "✓ Copied"
               : "Copy"}
           </button>
+
         </div>
 
         <pre>
-          <code>{code}</code>
+          <code>
+            {code}
+          </code>
         </pre>
+
       </div>
     );
   };
 
-  // -----------------------------------------
+  // =========================================
   // STATISTICS
-  // -----------------------------------------
+  // =========================================
 
-  const totalMessages = chats.reduce(
-    (total, chat) =>
-      total +
-      (chat.messages?.length || 0),
-    0
-  );
+  const totalMessages =
+    chats.reduce(
+      (total, chat) =>
+        total +
+        (chat.messages
+          ?.length || 0),
+      0
+    );
 
-  const userMessages = chats.reduce(
-    (total, chat) =>
-      total +
-      (chat.messages || []).filter(
-        (message) =>
-          message.role === "user"
-      ).length,
-    0
-  );
+  const userMessages =
+    chats.reduce(
+      (total, chat) =>
+        total +
+        (chat.messages || [])
+          .filter(
+            (message) =>
+              message.role ===
+              "user"
+          ).length,
+      0
+    );
 
-  const aiMessages = chats.reduce(
-    (total, chat) =>
-      total +
-      (chat.messages || []).filter(
-        (message) =>
-          message.role === "assistant" &&
-          !message.isError
-      ).length,
-    0
-  );
+  const aiMessages =
+    chats.reduce(
+      (total, chat) =>
+        total +
+        (chat.messages || [])
+          .filter(
+            (message) =>
+              message.role ===
+                "assistant" &&
+              !message.isError
+          ).length,
+      0
+    );
 
-  // -----------------------------------------
-  // QUICK ACTION
-  // -----------------------------------------
-
-  const useQuickPrompt = (prompt) => {
+  const useQuickPrompt = (
+    prompt
+  ) => {
     setInput(prompt);
   };
 
-  // -----------------------------------------
+  // =========================================
   // UI
-  // -----------------------------------------
+  // =========================================
 
   return (
     <div
       className={`app ${
-        darkMode ? "dark-mode" : ""
+        darkMode
+          ? "dark-mode"
+          : ""
       }`}
     >
+
       {/* =====================================
           SIDEBAR
       ====================================== */}
 
       <aside className="sidebar">
+
         <div className="sidebar-top">
 
           <div className="logo-area">
+
             <div className="logo-icon">
               ✦
             </div>
 
             <div>
-              <h1>Astra AI</h1>
+              <h1>
+                Astra AI
+              </h1>
 
               <span>
                 Personal AI Assistant
               </span>
             </div>
+
           </div>
 
           <button
@@ -976,29 +1071,44 @@ function App() {
             className="new-chat-button"
             onClick={newChat}
           >
-            <span>＋</span>
+            <span>
+              ＋
+            </span>
+
             New Chat
           </button>
 
           <div className="search-box">
-            <span>🔍</span>
+
+            <span>
+              🔍
+            </span>
 
             <input
               type="text"
               placeholder="Search chats..."
-              value={searchText}
-              onChange={(event) =>
+              value={
+                searchText
+              }
+              onChange={(
+                event
+              ) =>
                 setSearchText(
-                  event.target.value
+                  event.target
+                    .value
                 )
               }
             />
+
           </div>
+
         </div>
 
         <div className="chat-history">
+
           {filteredChats.map(
             (chat) => (
+
               <div
                 key={chat.id}
                 className={`chat-history-item ${
@@ -1008,10 +1118,14 @@ function App() {
                     : ""
                 }`}
                 onClick={() =>
-                  selectChat(chat.id)
+                  selectChat(
+                    chat.id
+                  )
                 }
               >
+
                 <div className="chat-history-main">
+
                   <span className="chat-icon">
                     {chat.pinned
                       ? "📌"
@@ -1020,6 +1134,7 @@ function App() {
 
                   {renamingChatId ===
                   chat.id ? (
+
                     <input
                       className="rename-input"
                       value={
@@ -1037,6 +1152,7 @@ function App() {
                       onKeyDown={(
                         event
                       ) => {
+
                         if (
                           event.key ===
                           "Enter"
@@ -1054,33 +1170,46 @@ function App() {
                             null
                           );
                         }
+
                       }}
-                      onClick={(event) =>
+                      onClick={(
+                        event
+                      ) =>
                         event.stopPropagation()
                       }
                     />
+
                   ) : (
+
                     <span className="chat-title">
-                      {chat.title}
+                      {
+                        chat.title
+                      }
                     </span>
+
                   )}
+
                 </div>
 
                 <div className="chat-actions">
+
                   <button
                     type="button"
-                    className="pin-chat"
                     title={
                       chat.pinned
                         ? "Unpin Chat"
                         : "Pin Chat"
                     }
-                    onClick={(event) => {
+                    onClick={(
+                      event
+                    ) => {
+
                       event.stopPropagation();
 
                       togglePinChat(
                         chat.id
                       );
+
                     }}
                   >
                     {chat.pinned
@@ -1091,12 +1220,16 @@ function App() {
                   <button
                     type="button"
                     title="Rename Chat"
-                    onClick={(event) => {
+                    onClick={(
+                      event
+                    ) => {
+
                       event.stopPropagation();
 
                       startRename(
                         chat
                       );
+
                     }}
                   >
                     ✏️
@@ -1104,35 +1237,49 @@ function App() {
 
                   <button
                     type="button"
+                    className="delete-chat-button"
                     title="Delete Chat"
-                    onClick={(event) => {
+                    onClick={(
+                      event
+                    ) => {
+
                       event.stopPropagation();
 
                       deleteChat(
                         chat.id
                       );
+
                     }}
                   >
-                    🗑️
+                    🗑
                   </button>
+
                 </div>
+
               </div>
+
             )
           )}
 
           {filteredChats.length ===
             0 && (
+
             <div className="no-chats">
               No chats found
             </div>
+
           )}
+
         </div>
 
         <div className="sidebar-bottom">
+
           <button
             type="button"
             onClick={() =>
-              setSettingsOpen(true)
+              setSettingsOpen(
+                true
+              )
             }
           >
             ⚙️ Settings
@@ -1146,15 +1293,19 @@ function App() {
           >
             🗑️ Clear All Chats
           </button>
+
         </div>
+
       </aside>
 
       {/* =====================================
-          MAIN
+          MAIN CONTENT
       ====================================== */}
 
       <main className="main-content">
+
         <header className="top-header">
+
           <div>
             <h2>
               {activeChat?.title ||
@@ -1167,18 +1318,35 @@ function App() {
           </div>
 
           <div className="header-actions">
-            <button
-              type="button"
-              className="theme-button"
-              onClick={
-                toggleTheme
-              }
-              title="Toggle Theme"
-            >
-              {darkMode
-                ? "☀️"
-                : "🌙"}
-            </button>
+
+            {/* =================================
+                UIVERSE THEME SWITCH
+            ================================== */}
+
+            <label className="bloom-switch">
+
+              <input
+                type="checkbox"
+                checked={darkMode}
+                onChange={() =>
+                  setDarkMode(
+                    (prev) =>
+                      !prev
+                  )
+                }
+              />
+
+              <span className="bloom-slider">
+
+                <span className="bloom-icon">
+                  {darkMode
+                    ? "☀"
+                    : "☾"}
+                </span>
+
+              </span>
+
+            </label>
 
             <button
               type="button"
@@ -1186,7 +1354,6 @@ function App() {
               onClick={
                 exportChat
               }
-              title="Export Chat"
             >
               📤
             </button>
@@ -1197,7 +1364,6 @@ function App() {
               onClick={() =>
                 fileInputRef.current?.click()
               }
-              title="Import Chat"
             >
               📥
             </button>
@@ -1213,7 +1379,9 @@ function App() {
                 importChat
               }
             />
+
           </div>
+
         </header>
 
         {/* =====================================
@@ -1221,9 +1389,12 @@ function App() {
         ====================================== */}
 
         <div className="messages-container">
+
           {messages.length ===
           0 ? (
+
             <div className="welcome-screen">
+
               <div className="welcome-icon">
                 ✦
               </div>
@@ -1239,6 +1410,7 @@ function App() {
               </p>
 
               <div className="welcome-suggestions">
+
                 <button
                   type="button"
                   onClick={() =>
@@ -1271,35 +1443,51 @@ function App() {
                 >
                   📚 Study Tips
                 </button>
+
               </div>
+
             </div>
+
           ) : (
+
             messages.map(
-              (message, index) => (
+              (
+                message,
+                index
+              ) => (
+
                 <div
                   key={message.id}
                   className={`message-row ${
                     message.role
                   }`}
                 >
+
                   <div className="message-avatar">
+
                     {message.role ===
                     "user"
                       ? "👤"
                       : "✦"}
+
                   </div>
 
                   <div className="message-content-wrapper">
+
                     <div className="message-name">
+
                       {message.role ===
                       "user"
                         ? "You"
                         : "Astra AI"}
+
                     </div>
 
                     <div className="message-bubble">
+
                       {message.role ===
                       "assistant" ? (
+
                         <ReactMarkdown
                           components={{
                             code: MarkdownCode,
@@ -1309,28 +1497,39 @@ function App() {
                             message.content
                           }
                         </ReactMarkdown>
+
                       ) : (
+
                         <div className="user-message-text">
                           {
                             message.content
                           }
                         </div>
+
                       )}
+
                     </div>
 
                     <div className="message-footer">
+
                       {showTimestamps &&
                         message.timestamp && (
+
                           <span className="message-time">
+
                             {formatTime(
                               message.timestamp
                             )}
+
                           </span>
+
                         )}
 
                       {message.role ===
                         "assistant" && (
+
                         <div className="message-actions">
+
                           <button
                             type="button"
                             onClick={() =>
@@ -1349,6 +1548,7 @@ function App() {
                           {index ===
                             messages.length -
                               1 && (
+
                             <button
                               type="button"
                               onClick={() =>
@@ -1362,37 +1562,72 @@ function App() {
                             >
                               🔄 Regenerate
                             </button>
+
                           )}
+
                         </div>
+
                       )}
+
                     </div>
+
                   </div>
+
                 </div>
+
               )
             )
+
           )}
 
+          {/* =================================
+              ASTRA AI LOADING
+          ================================== */}
+
           {loading && (
+
             <div className="message-row assistant">
+
               <div className="message-avatar">
                 ✦
               </div>
 
               <div className="message-content-wrapper">
+
                 <div className="message-name">
                   Astra AI
                 </div>
 
-                <div className="message-bubble typing-bubble">
-                  <span className="typing-dot"></span>
-                  <span className="typing-dot"></span>
-                  <span className="typing-dot"></span>
+                <div className="message-bubble astra-loader-bubble">
+
+                  <div className="astra-loader">
+
+                    <span>
+                      loading
+                    </span>
+
+                    {" "}
+
+                    <span className="loader-highlight">
+                      Astra AI
+                    </span>
+
+                  </div>
+
                 </div>
+
               </div>
+
             </div>
+
           )}
 
-          <div ref={messagesEndRef} />
+          <div
+            ref={
+              messagesEndRef
+            }
+          />
+
         </div>
 
         {/* =====================================
@@ -1400,12 +1635,17 @@ function App() {
         ====================================== */}
 
         <div className="input-area">
+
           <div className="input-wrapper">
+
             <textarea
               value={input}
-              onChange={(event) =>
+              onChange={(
+                event
+              ) =>
                 setInput(
-                  event.target.value
+                  event.target
+                    .value
                 )
               }
               onKeyDown={
@@ -1420,6 +1660,7 @@ function App() {
             />
 
             {loading ? (
+
               <button
                 type="button"
                 className="stop-button"
@@ -1429,7 +1670,9 @@ function App() {
               >
                 ⏹ Stop
               </button>
+
             ) : (
+
               <button
                 type="button"
                 className="send-button"
@@ -1440,17 +1683,25 @@ function App() {
                   !input.trim()
                 }
               >
-                ➤
+                <span>
+                  Send
+                </span>
               </button>
+
             )}
+
           </div>
 
           <div className="input-hint">
+
             {enterToSend
               ? "Press Enter to send • Shift + Enter for new line"
               : "Enter creates a new line • Click send to send"}
+
           </div>
+
         </div>
+
       </main>
 
       {/* =====================================
@@ -1462,8 +1713,11 @@ function App() {
         {/* STATUS */}
 
         <div className="dashboard-card status-card">
+
           <div className="dashboard-card-header">
+
             <div>
+
               <span className="dashboard-label">
                 SYSTEM STATUS
               </span>
@@ -1471,17 +1725,22 @@ function App() {
               <h3>
                 Astra AI System
               </h3>
+
             </div>
 
             <div
               className={`status-dot ${
                 backendStatus
               }`}
-            ></div>
+            />
+
           </div>
 
           <div className="status-row">
-            <span>Backend</span>
+
+            <span>
+              Backend
+            </span>
 
             <strong
               className={
@@ -1502,30 +1761,43 @@ function App() {
                 ? "Checking..."
                 : "Offline"}
             </strong>
+
           </div>
 
           <div className="status-row">
-            <span>AI Model</span>
+
+            <span>
+              AI Model
+            </span>
 
             <strong>
               Llama 3.2
             </strong>
+
           </div>
 
           <div className="status-row">
-            <span>Mode</span>
+
+            <span>
+              Mode
+            </span>
 
             <strong>
               Local AI
             </strong>
+
           </div>
+
         </div>
 
         {/* QUICK ACTIONS */}
 
         <div className="dashboard-card">
+
           <div className="dashboard-card-header">
+
             <div>
+
               <span className="dashboard-label">
                 QUICK ACTIONS
               </span>
@@ -1533,11 +1805,13 @@ function App() {
               <h3>
                 What can I do?
               </h3>
+
             </div>
 
             <span className="dashboard-card-icon">
               ⚡
             </span>
+
           </div>
 
           <div className="quick-actions-grid">
@@ -1550,7 +1824,9 @@ function App() {
                 )
               }
             >
-              <span>🧠</span>
+              <span>
+                🧠
+              </span>
 
               <strong>
                 Explain AI
@@ -1559,6 +1835,7 @@ function App() {
               <small>
                 Learn something
               </small>
+
             </button>
 
             <button
@@ -1569,7 +1846,9 @@ function App() {
                 )
               }
             >
-              <span>💻</span>
+              <span>
+                💻
+              </span>
 
               <strong>
                 Write Code
@@ -1578,6 +1857,7 @@ function App() {
               <small>
                 Coding assistant
               </small>
+
             </button>
 
             <button
@@ -1588,7 +1868,9 @@ function App() {
                 )
               }
             >
-              <span>📚</span>
+              <span>
+                📚
+              </span>
 
               <strong>
                 Study
@@ -1597,6 +1879,7 @@ function App() {
               <small>
                 Study smarter
               </small>
+
             </button>
 
             <button
@@ -1607,7 +1890,9 @@ function App() {
                 )
               }
             >
-              <span>💡</span>
+              <span>
+                💡
+              </span>
 
               <strong>
                 Ideas
@@ -1616,9 +1901,11 @@ function App() {
               <small>
                 Get inspiration
               </small>
+
             </button>
 
           </div>
+
         </div>
 
         {/* STATISTICS */}
@@ -1626,7 +1913,9 @@ function App() {
         <div className="dashboard-card">
 
           <div className="dashboard-card-header">
+
             <div>
+
               <span className="dashboard-label">
                 YOUR ACTIVITY
               </span>
@@ -1634,17 +1923,22 @@ function App() {
               <h3>
                 Chat Statistics
               </h3>
+
             </div>
 
             <span className="dashboard-card-icon">
               📊
             </span>
+
           </div>
 
           <div className="stats-grid">
 
             <div className="stat-box">
-              <span>💬</span>
+
+              <span>
+                💬
+              </span>
 
               <strong>
                 {chats.length}
@@ -1653,10 +1947,14 @@ function App() {
               <small>
                 Chats
               </small>
+
             </div>
 
             <div className="stat-box">
-              <span>📨</span>
+
+              <span>
+                📨
+              </span>
 
               <strong>
                 {totalMessages}
@@ -1665,10 +1963,14 @@ function App() {
               <small>
                 Messages
               </small>
+
             </div>
 
             <div className="stat-box">
-              <span>👤</span>
+
+              <span>
+                👤
+              </span>
 
               <strong>
                 {userMessages}
@@ -1677,10 +1979,14 @@ function App() {
               <small>
                 You
               </small>
+
             </div>
 
             <div className="stat-box">
-              <span>✦</span>
+
+              <span>
+                ✦
+              </span>
 
               <strong>
                 {aiMessages}
@@ -1689,9 +1995,11 @@ function App() {
               <small>
                 Astra AI
               </small>
+
             </div>
 
           </div>
+
         </div>
 
         {/* RECENT CHATS */}
@@ -1699,7 +2007,9 @@ function App() {
         <div className="dashboard-card recent-card">
 
           <div className="dashboard-card-header">
+
             <div>
+
               <span className="dashboard-label">
                 RECENT
               </span>
@@ -1707,56 +2017,69 @@ function App() {
               <h3>
                 Recent Chats
               </h3>
+
             </div>
 
             <span className="dashboard-card-icon">
               🕘
             </span>
+
           </div>
 
           <div className="recent-chats">
 
             {chats
               .slice(0, 5)
-              .map((chat) => (
-                <button
-                  type="button"
-                  key={chat.id}
-                  className={`recent-chat ${
-                    chat.id ===
-                    activeChatId
-                      ? "selected"
-                      : ""
-                  }`}
-                  onClick={() =>
-                    selectChat(
-                      chat.id
-                    )
-                  }
-                >
-                  <span className="recent-chat-icon">
-                    {chat.pinned
-                      ? "📌"
-                      : "💬"}
-                  </span>
+              .map(
+                (chat) => (
 
-                  <span className="recent-chat-info">
-                    <strong>
-                      {chat.title}
-                    </strong>
+                  <button
+                    type="button"
+                    key={chat.id}
+                    className={`recent-chat ${
+                      chat.id ===
+                      activeChatId
+                        ? "selected"
+                        : ""
+                    }`}
+                    onClick={() =>
+                      selectChat(
+                        chat.id
+                      )
+                    }
+                  >
 
-                    <small>
-                      {
-                        chat.messages
-                          ?.length
-                      }{" "}
-                      messages
-                    </small>
-                  </span>
-                </button>
-              ))}
+                    <span className="recent-chat-icon">
+                      {chat.pinned
+                        ? "📌"
+                        : "💬"}
+                    </span>
+
+                    <span className="recent-chat-info">
+
+                      <strong>
+                        {
+                          chat.title
+                        }
+                      </strong>
+
+                      <small>
+                        {
+                          chat.messages
+                            ?.length
+                        }{" "}
+                        messages
+                      </small>
+
+                    </span>
+
+                  </button>
+
+                )
+              )}
 
           </div>
+
         </div>
 
         {/* FOOTER */}
@@ -1768,6 +2091,7 @@ function App() {
           </div>
 
           <div>
+
             <strong>
               Astra AI
             </strong>
@@ -1775,6 +2099,7 @@ function App() {
             <span>
               Powered by local Llama 3.2
             </span>
+
           </div>
 
         </div>
@@ -1782,19 +2107,25 @@ function App() {
       </aside>
 
       {/* =====================================
-          SETTINGS
+          SETTINGS MODAL
       ====================================== */}
 
       {settingsOpen && (
+
         <div
           className="settings-overlay"
           onClick={() =>
-            setSettingsOpen(false)
+            setSettingsOpen(
+              false
+            )
           }
         >
+
           <div
             className="settings-panel"
-            onClick={(event) =>
+            onClick={(
+              event
+            ) =>
               event.stopPropagation()
             }
           >
@@ -1802,14 +2133,15 @@ function App() {
             <div className="settings-header">
 
               <div>
+
                 <h2>
                   Settings
                 </h2>
 
                 <p>
-                  Customize your
-                  Astra AI experience
+                  Customize your Astra AI experience
                 </p>
+
               </div>
 
               <button
@@ -1837,6 +2169,7 @@ function App() {
               <div className="settings-item">
 
                 <div>
+
                   <strong>
                     Theme
                   </strong>
@@ -1846,25 +2179,43 @@ function App() {
                       ? "Dark Mode"
                       : "Light Mode"}
                   </span>
+
                 </div>
 
-                <button
-                  type="button"
-                  className="settings-action"
-                  onClick={
-                    toggleTheme
-                  }
-                >
-                  {darkMode
-                    ? "☀️ Light"
-                    : "🌙 Dark"}
-                </button>
+                {/* SAME UIVERSE SWITCH */}
+
+                <label className="bloom-switch">
+
+                  <input
+                    type="checkbox"
+                    checked={
+                      darkMode
+                    }
+                    onChange={() =>
+                      setDarkMode(
+                        (prev) =>
+                          !prev
+                      )
+                    }
+                  />
+
+                  <span className="bloom-slider">
+
+                    <span className="bloom-icon">
+                      {darkMode
+                        ? "☀"
+                        : "☾"}
+                    </span>
+
+                  </span>
+
+                </label>
 
               </div>
 
             </div>
 
-            {/* CHAT */}
+            {/* CHAT SETTINGS */}
 
             <div className="settings-section">
 
@@ -1875,15 +2226,15 @@ function App() {
               <div className="settings-item">
 
                 <div>
+
                   <strong>
                     Enter to Send
                   </strong>
 
                   <span>
-                    Press Enter to
-                    send your
-                    message
+                    Press Enter to send your message
                   </span>
+
                 </div>
 
                 <button
@@ -1906,14 +2257,15 @@ function App() {
               <div className="settings-item">
 
                 <div>
+
                   <strong>
                     Show Timestamps
                   </strong>
 
                   <span>
-                    Show message
-                    time
+                    Show message time
                   </span>
+
                 </div>
 
                 <button
@@ -1936,15 +2288,15 @@ function App() {
               <div className="settings-item">
 
                 <div>
+
                   <strong>
-                    Clear All
-                    Chats
+                    Clear All Chats
                   </strong>
 
                   <span>
-                    Delete all saved
-                    conversations
+                    Delete all saved conversations
                   </span>
+
                 </div>
 
                 <button
@@ -1976,20 +2328,19 @@ function App() {
                 </div>
 
                 <div>
+
                   <strong>
                     Astra AI
                   </strong>
 
                   <span>
-                    Personal AI
-                    Assistant
+                    Personal AI Assistant
                   </span>
 
                   <small>
-                    Powered by
-                    local Llama
-                    3.2
+                    Powered by local Llama 3.2
                   </small>
+
                 </div>
 
               </div>
@@ -1997,8 +2348,11 @@ function App() {
             </div>
 
           </div>
+
         </div>
+
       )}
+
     </div>
   );
 }
