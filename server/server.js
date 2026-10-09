@@ -1,3 +1,4 @@
+
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
@@ -8,22 +9,25 @@ dotenv.config();
 const app = express();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 
 const PORT = 5000;
 const OLLAMA_URL = "http://localhost:11434/api/generate";
 const MODEL = "llama3.2";
 
-// -----------------------------------------
-// TAVILY
-// -----------------------------------------
+// Keep the model loaded between requests.
+const OLLAMA_OPTIONS = {
+  temperature: 0.3,
+  num_predict: 96,
+  num_ctx: 2048,
+};
 
-const tavilyClient = tavily({
-  apiKey: process.env.TAVILY_API_KEY,
-});
+const tavilyClient = process.env.TAVILY_API_KEY
+  ? tavily({ apiKey: process.env.TAVILY_API_KEY })
+  : null;
 
 // -----------------------------------------
-// HOME / SERVER TEST
+// SERVER TEST
 // -----------------------------------------
 
 app.get("/", (req, res) => {
@@ -33,13 +37,13 @@ app.get("/", (req, res) => {
 });
 
 // -----------------------------------------
-// CHECK IF USER WANTS WEB SEARCH
+// WEB SEARCH DETECTION
 // -----------------------------------------
 
 function needsWebSearch(message) {
   const text = message.toLowerCase();
 
-  const searchWords = [
+  const keywords = [
     "latest",
     "today",
     "current",
@@ -52,7 +56,6 @@ function needsWebSearch(message) {
     "price",
     "stock",
     "score",
-    "result",
     "2026",
     "2025",
     "who is",
@@ -60,9 +63,7 @@ function needsWebSearch(message) {
     "happening",
   ];
 
-  return searchWords.some((word) =>
-    text.includes(word)
-  );
+  return keywords.some((word) => text.includes(word));
 }
 
 // -----------------------------------------
@@ -70,18 +71,21 @@ function needsWebSearch(message) {
 // -----------------------------------------
 
 async function performWebSearch(query) {
+  if (!tavilyClient) {
+    console.log("Tavily API key missing; skipping web search.");
+    return null;
+  }
+
   try {
     console.log("🔎 Web search:", query);
 
-    const result = await tavilyClient.search(query, {
+    return await tavilyClient.search(query, {
       searchDepth: "basic",
-      maxResults: 5,
+      maxResults: 3,
       includeAnswer: true,
     });
-
-    return result;
   } catch (error) {
-    console.error("Tavily Search Error:", error);
+    console.error("Tavily Search Error:", error.message);
     return null;
   }
 }
@@ -91,166 +95,138 @@ async function performWebSearch(query) {
 // -----------------------------------------
 
 app.post("/chat", async (req, res) => {
-  try {
-    const {
-      message,
-      messages = [],
-    } = req.body;
+  const startedAt = Date.now();
 
-    if (!message || !message.trim()) {
+  try {
+    const message =
+      typeof req.body.message === "string"
+        ? req.body.message.trim()
+        : "";
+
+    const messages = Array.isArray(req.body.messages)
+      ? req.body.messages
+      : [];
+
+    if (!message) {
       return res.status(400).json({
         error: "Message is required",
       });
     }
 
-    // -----------------------------------------
-    // KEEP ONLY RECENT HISTORY
-    // -----------------------------------------
-
+    // Keep only a small amount of recent history.
     const recentHistory = messages
       .filter(
         (item) =>
           item &&
-          (item.role === "user" ||
-            item.role === "assistant") &&
-          item.content
+          ["user", "assistant"].includes(item.role) &&
+          typeof item.content === "string" &&
+          item.content.trim()
       )
-      .slice(-10);
+      .slice(-4)
+      .map((item) => ({
+        role: item.role,
+        content: item.content.slice(-500),
+      }));
 
-    const conversationHistory =
-      recentHistory
-        .map((item) => {
-          return `${
-            item.role === "user"
-              ? "User"
-              : "Astra AI"
-          }: ${item.content}`;
-        })
-        .join("\n");
+    const conversationHistory = recentHistory
+      .map(
+        (item) =>
+          `${item.role === "user" ? "User" : "Astra AI"}: ${item.content}`
+      )
+      .join("\n");
 
-    // -----------------------------------------
-    // CHECK WEB SEARCH
-    // -----------------------------------------
-
-    const useWebSearch =
-      needsWebSearch(message);
-
+    // Only search the web when the question appears time-sensitive.
+    const useWebSearch = needsWebSearch(message);
     let webContext = "";
 
     if (useWebSearch) {
-      const searchResult =
-        await performWebSearch(message);
+      const searchResult = await performWebSearch(message);
 
       if (searchResult) {
-        const answer =
-          searchResult.answer || "";
+        const answer = searchResult.answer || "";
+        const results = (searchResult.results || [])
+          .slice(0, 3)
+          .map(
+            (item, index) =>
+              `[${index + 1}] ${item.title || ""}\n` +
+              `URL: ${item.url || ""}\n` +
+              `Content: ${(item.content || "").slice(0, 700)}`
+          )
+          .join("\n\n");
 
-        const results =
-          searchResult.results || [];
-
-        webContext = `
-LIVE WEB SEARCH RESULTS:
-
-${answer}
-
-${results
-  .map(
-    (item, index) =>
-      `[${index + 1}] ${item.title}
-URL: ${item.url}
-Content: ${item.content}`
-  )
-  .join("\n\n")}
-`;
+        webContext =
+          `Use these live search results when relevant.\n` +
+          `${answer}\n${results}`;
       }
     }
 
-    // -----------------------------------------
-    // ASTRA AI PROMPT
-    // -----------------------------------------
+    // Keep the prompt short to reduce processing.
+    const prompt = [
+      "You are Astra AI, a helpful personal assistant.",
+      "Answer clearly and directly. Keep simple answers short.",
+      "Use Markdown code blocks for programming code.",
+      "Use supplied web results for current facts; do not invent sources.",
+      conversationHistory
+        ? `Recent conversation:\n${conversationHistory}`
+        : "",
+      webContext ? `Web results:\n${webContext}` : "",
+      `User: ${message}`,
+      "Astra AI:",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
 
-    const prompt = `You are Astra AI, a helpful personal AI assistant.
+    console.log(`💬 Request started: ${message.slice(0, 80)}`);
 
-Answer the user's question clearly and naturally.
-
-IMPORTANT RULES:
-
-1. Give direct and useful answers.
-2. Keep simple questions concise.
-3. If programming code is needed, ALWAYS use Markdown code blocks.
-4. Never put programming code as plain text.
-5. If LIVE WEB SEARCH RESULTS are provided, use them to answer current/latest questions.
-6. Do not invent information that is not supported by the search results.
-7. If web search results are unavailable, honestly say that live information could not be retrieved.
-8. Use conversation history only when it helps answer the current question.
-9. When using web search information, mention useful sources naturally when appropriate.
-
-Recent conversation:
-${conversationHistory || "No previous conversation."}
-
-${webContext}
-
-Current user message:
-${message}
-
-Astra AI answer:`;
-
-    // -----------------------------------------
-    // OLLAMA
-    // -----------------------------------------
-
-    const response = await fetch(
-      OLLAMA_URL,
-      {
-        method: "POST",
-
-        headers: {
-          "Content-Type":
-            "application/json",
-        },
-
-        body: JSON.stringify({
-          model: MODEL,
-          prompt: prompt,
-          stream: false,
-
-          options: {
-            temperature: 0.5,
-            num_predict: 512,
-          },
-        }),
-      }
-    );
+    const response = await fetch(OLLAMA_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        prompt,
+        stream: false,
+        keep_alive: "30m",
+        options: OLLAMA_OPTIONS,
+      }),
+      signal: AbortSignal.timeout(120000),
+    });
 
     if (!response.ok) {
-      const errorText =
-        await response.text();
+      const errorText = await response.text();
 
-      return res.status(500).json({
+      console.error("Ollama error:", errorText);
+
+      return res.status(502).json({
         error: `Ollama error: ${errorText}`,
       });
     }
 
-    const data =
-      await response.json();
+    const data = await response.json();
+    const reply = (data.response || "").trim();
 
-    res.json({
-      reply:
-        data.response ||
-        "Sorry, I could not generate a response.",
+    console.log(
+      `✅ Ollama completed in ${((Date.now() - startedAt) / 1000).toFixed(1)} seconds`
+    );
 
+    return res.json({
+      reply: reply || "Sorry, I could not generate a response.",
       webSearchUsed: useWebSearch,
     });
   } catch (error) {
     console.error(
-      "Astra AI Error:",
-      error
+      `❌ Astra AI failed after ${((Date.now() - startedAt) / 1000).toFixed(1)} seconds:`,
+      error.message
     );
 
-    res.status(500).json({
+    const status = error.name === "TimeoutError" ? 504 : 500;
+
+    return res.status(status).json({
       error:
-        error.message ||
-        "AI response failed",
+        error.name === "TimeoutError"
+          ? "Astra AI took too long to respond. Please try again."
+          : error.message || "AI response failed",
     });
   }
 });
@@ -259,18 +235,11 @@ Astra AI answer:`;
 // START SERVER
 // -----------------------------------------
 
-app.listen(
-  PORT,
-  "127.0.0.1",
-  () => {
-    console.log(
-      `Astra AI Backend running at http://localhost:${PORT}`
-    );
-
-    console.log(
-      process.env.TAVILY_API_KEY
-        ? "🔎 Tavily Web Search: Connected"
-        : "⚠️ Tavily Web Search: API key missing"
-    );
-  }
-);
+app.listen(PORT, "127.0.0.1", () => {
+  console.log(`Astra AI Backend running at http://localhost:${PORT}`);
+  console.log(
+    tavilyClient
+      ? "🔎 Tavily Web Search: Connected"
+      : "⚠️ Tavily API key missing; web search is disabled"
+  );
+});

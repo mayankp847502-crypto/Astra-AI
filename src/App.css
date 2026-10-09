@@ -1634,7 +1634,7 @@ button {
    RIGHT DASHBOARD
 ========================================================= */
 
-.dashboard-panel {
+.dashboard {
   height: 100vh;
 
   overflow-y: auto;
@@ -1647,23 +1647,23 @@ button {
     1px solid #e5e9f2;
 }
 
-.dark-mode .dashboard-panel {
+.dark-mode .dashboard {
   background: #0d1425;
   border-left-color: #202b42;
 }
 
-.dashboard-panel::-webkit-scrollbar {
+.dashboard::-webkit-scrollbar {
   width: 5px;
 }
 
-.dashboard-panel::-webkit-scrollbar-thumb {
+.dashboard::-webkit-scrollbar-thumb {
   background: #cbd3e1;
 
   border-radius: 20px;
 }
 
 .dark-mode
-  .dashboard-panel::-webkit-scrollbar-thumb {
+  .dashboard::-webkit-scrollbar-thumb {
   background: #33425d;
 }
 
@@ -2498,7 +2498,7 @@ button {
       minmax(0, 1fr);
   }
 
-  .dashboard-panel {
+  .dashboard {
     display: none;
   }
 }
@@ -2712,4 +2712,146 @@ button {
   background: rgba(99, 102, 241, 0.2);
 
   color: inherit;
+}
+
+
+/* =========================================================
+   ASTRA AI — FINAL LAYOUT FIXES
+========================================================= */
+
+/* Search Chats belongs ONLY in the left sidebar. */
+.sidebar-search-box {
+  position: relative !important;
+  top: auto !important;
+  right: auto !important;
+  left: auto !important;
+  bottom: auto !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin-top: 18px !important;
+  z-index: 2 !important;
+}
+
+.sidebar-search-box input {
+  width: 100% !important;
+}
+
+/* Never let a search box float over the dashboard. */
+.dashboard .search-box {
+  position: relative !important;
+  top: auto !important;
+  right: auto !important;
+  left: auto !important;
+  bottom: auto !important;
+}
+
+/* The JSX uses .dashboard, not .dashboard-panel. */
+.dashboard {
+  height: 100vh;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 22px 16px;
+  background: #f7f9fc;
+  border-left: 1px solid #e5e9f2;
+}
+
+.dark-mode .dashboard {
+  background: #0d1425;
+  border-left-color: #202b42;
+}
+
+.dashboard::-webkit-scrollbar {
+  width: 5px;
+}
+
+.dashboard::-webkit-scrollbar-thumb {
+  background: #cbd3e1;
+  border-radius: 20px;
+}
+
+.dark-mode .dashboard::-webkit-scrollbar-thumb {
+  background: #33425d;
+}
+
+/* Keep the three-column desktop layout stable. */
+.app {
+  width: 100%;
+  height: 100vh;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr) 310px;
+  overflow: hidden;
+}
+
+.sidebar,
+.main-content,
+.dashboard {
+  min-height: 0;
+}
+
+.sidebar {
+  height: 100vh;
+  min-height: 0;
+}
+
+.main-content {
+  height: 100vh;
+  min-height: 0;
+}
+
+.top-header {
+  flex-shrink: 0 !important;
+}
+
+.messages-container {
+  min-height: 0 !important;
+}
+
+.input-area {
+  flex-shrink: 0 !important;
+}
+
+@media (max-width: 1000px) {
+  .app {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .dashboard {
+    display: none !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .app {
+    display: block;
+    height: 100vh;
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  .main-content {
+    width: 100%;
+    height: 100vh;
+  }
+}
+/* =========================================================
+   ASTRA AI MIC ANIMATION
+========================================================= */
+
+@keyframes astraMicPulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 4px rgba(239, 68, 68, 0.10),
+      0 8px 20px rgba(239, 68, 68, 0.20);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 9px rgba(239, 68, 68, 0.04),
+      0 10px 28px rgba(239, 68, 68, 0.35);
+  }
 }
